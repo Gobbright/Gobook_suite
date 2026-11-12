@@ -1,0 +1,367 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import {
+  Activity, AlertTriangle, ArrowRightLeft, Award, BarChart2, BarChart3, BedDouble, Bell, BookOpen,
+  Building2, Bus, CalendarCheck, CalendarClock, CalendarOff, Car, CheckSquare, ChevronDown, Contact,
+  ClipboardList, CreditCard, Database, FileCheck, FileMinus, FilePlus,
+  FileSpreadsheet, FileText, FlaskConical, FolderOpen, GitBranch, GraduationCap, Grid3x3,
+  HeartPulse, History, Home, IndianRupee, LayoutDashboard, LayoutTemplate,
+  LayoutGrid, Lock, LogIn, LogOut, Mail, MessageCircle, Microscope, Package, PackageMinus, PackagePlus, Palette,
+  PenLine, Pill, PieChart, QrCode, Receipt, ReceiptText, RefreshCw, Route, Scale, Settings,
+  Shield, ShoppingCart, Sparkles, Stethoscope, Truck, TrendingUp, UserCheck, UserPlus, UserRound,
+  Users, UtensilsCrossed, Wallet, Warehouse, Wrench, XCircle, Zap,
+} from 'lucide-react';
+
+import { getSidebarSections } from '../../constants/navigation.js';
+import { logout } from '../../services/authService.js';
+import { useCurrentUser } from '../../hooks/useCurrentUser.js';
+import { getToken } from '../../services/authToken.js';
+import sidebarLogo from '../../assets/images/logo/Logo.png';
+import { normalizeAppPath } from '../../routes/navigation.js';
+
+const ICON_MAP = {
+  Activity, AlertTriangle, ArrowRightLeft, Award, BarChart2, BarChart3, BedDouble, Bell, BookOpen,
+  Building2, Bus, CalendarCheck, CalendarClock, CalendarOff, Car, CheckSquare, Contact, ClipboardList, CreditCard, Database,
+  FileCheck, FileMinus, FilePlus, FileSpreadsheet,
+  FileText, FlaskConical, FolderOpen, GitBranch, GraduationCap, Grid3x3, HeartPulse, History, Home, LayoutDashboard, LayoutGrid, LayoutTemplate,
+  Lock, LogIn, Mail, MessageCircle, Microscope, Package, PackageMinus, PackagePlus, Palette, PenLine,
+  Pill, PieChart, QrCode, Receipt, ReceiptText, RefreshCw, Route, Scale, Settings, Shield,
+  IndianRupee, ShoppingCart, Sparkles, Stethoscope, Truck, TrendingUp, UserCheck, UserPlus, UserRound, Users,
+  UtensilsCrossed, Wallet, Warehouse, Wrench, XCircle, Zap,
+};
+
+function NavIcon({ name }) {
+  const Icon = ICON_MAP[name];
+  return Icon ? <Icon size={15} strokeWidth={1.75} /> : null;
+}
+
+function findOpenNavItem(sidebarSections, path) {
+  for (const section of sidebarSections) {
+    for (const item of section.items) {
+      if (item.children?.some((c) => normalizeAppPath(c.href) === path || (item.href && path === normalizeAppPath(item.href)))) return item.label;
+    }
+  }
+  return null;
+}
+
+function findActiveSection(sidebarSections, path) {
+  for (const section of sidebarSections) {
+    for (const item of section.items) {
+      if (item.href && normalizeAppPath(item.href) === path) return section.title;
+      if (item.children?.some((c) => normalizeAppPath(c.href) === path)) return section.title;
+    }
+  }
+  return null;
+}
+
+function sectionHasPath(section, path) {
+  return section.items.some((item) => (
+    (item.href && (path === normalizeAppPath(item.href) || path.startsWith(`${normalizeAppPath(item.href)}/`)))
+    || item.children?.some((child) => path === normalizeAppPath(child.href) || path.startsWith(`${normalizeAppPath(child.href)}/`))
+  ));
+}
+
+function focusHotelSidebarSections(sections, path) {
+  const dashboard = sections.find((section) => section.title === 'Dashboard');
+  const settings = sections.find((section) => section.title === 'Settings');
+  const activeModule = sections.find((section) => (
+    section.title !== 'Dashboard'
+    && section.title !== 'Settings'
+    && sectionHasPath(section, path)
+  ));
+  return [
+    dashboard ? { ...dashboard, hotelRole: 'top' } : null,
+    activeModule ? { ...activeModule, forceGroup: true, hotelRole: 'active' } : null,
+    settings ? { ...settings, hotelRole: 'bottom' } : null,
+  ].filter(Boolean);
+}
+
+function getExternalHref(item) {
+  if (!item.sso) return item.externalUrl;
+  const token = getToken();
+  const url = new URL('/login', item.externalUrl);
+  if (token) url.searchParams.set('token', token);
+  if (item.ssoTarget) url.searchParams.set('target', item.ssoTarget);
+  return url.toString();
+}
+const SECTION_KEY = 'gobook.openSection';
+
+function lockedClick(event) {
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function LockBadge() {
+  return <Lock size={13} strokeWidth={2.2} className="ml-auto flex-none text-[#7ab4d8]" aria-label="Locked" />;
+}
+
+function isNavLocked(section, item) {
+  if (item?.locked === false) return false;
+  return Boolean(section.locked || item?.locked);
+}
+
+export function Sidebar({ mobileOpen = false, onClose = () => {} }) {
+  const location = useLocation();
+  const storedUser = useCurrentUser();
+  const currentPath = normalizeAppPath(location.pathname || '/dashboard');
+  const rawSidebarSections = useMemo(() => {
+    const currentUser = storedUser || {};
+    return getSidebarSections(currentUser.category || 'other', currentUser);
+  }, [storedUser]);
+  const sidebarSections = rawSidebarSections;
+  const [openSection, setOpenSection] = useState(() => {
+    // Active section from current URL takes priority; otherwise restore last saved; Sales is the default
+    const fromPath = findActiveSection(sidebarSections, normalizeAppPath(window.location.pathname || '/dashboard'));
+    if (fromPath) {
+      sessionStorage.setItem(SECTION_KEY, fromPath);
+      return fromPath;
+    }
+    return sessionStorage.getItem(SECTION_KEY) ?? 'Dashboard';
+  });
+  const [openNavItem, setOpenNavItem] = useState(
+    () => findOpenNavItem(sidebarSections, normalizeAppPath(window.location.pathname || '/dashboard')),
+  );
+
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const previousPath = useRef(currentPath);
+
+  useEffect(() => {
+    setOpenNavItem(findOpenNavItem(sidebarSections, currentPath));
+    const section = findActiveSection(sidebarSections, currentPath);
+    if (section) {
+      setOpenSection(section);
+      sessionStorage.setItem(SECTION_KEY, section);
+    }
+    if (previousPath.current !== currentPath) {
+      previousPath.current = currentPath;
+      onCloseRef.current();
+    }
+  }, [currentPath, sidebarSections]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') onCloseRef.current();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [mobileOpen]);
+
+  function toggleSection(title) {
+    setOpenSection((s) => {
+      const next = s === title ? '' : title;
+      sessionStorage.setItem(SECTION_KEY, next);
+      return next;
+    });
+  }
+
+  return (
+    <>
+      {mobileOpen && (
+        <button
+          type="button"
+          className="fixed inset-0 bg-black/40 z-40 border-0 p-0 cursor-default"
+          onClick={onClose}
+          aria-label="Close navigation"
+          data-navigation-overlay
+        />
+      )}
+      <aside
+        id="app-navigation"
+        aria-label="Main navigation"
+        className={`app-sidebar bg-[#062844] text-white flex-none w-60 h-dvh min-h-screen py-4 flex flex-col
+          fixed inset-y-0 left-0 z-50 transition-transform duration-200
+          ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      >
+        {/* Logo */}
+        <div className="px-4 mb-4 flex-none flex justify-start overflow-visible">
+          <img
+            src={sidebarLogo}
+            alt="GoBook"
+            className="h-auto w-[225px] max-w-none object-contain object-left brightness-125 contrast-125 saturate-150 drop-shadow-[0_0_8px_rgba(255,255,255,0.22)]"
+          />
+        </div>
+
+        {/* Nav sections */}
+        <nav className="flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto scrollbar-hide px-3">
+          {sidebarSections.map((section) => (
+            <div key={section.title} className={section.hotelRole === 'active' ? 'flex-1 min-h-0' : section.hotelRole === 'bottom' ? 'mt-auto' : ''}>
+              {section.items.length === 1 && !section.forceGroup ? (
+                /* Single-item section - render as direct link */
+                section.items[0].externalUrl ? (
+                  <a
+                    href={getExternalHref(section.items[0])}
+                    onClick={section.locked ? lockedClick : onClose}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium no-underline transition-colors ${section.locked ? 'text-[#7f9bb0] cursor-not-allowed opacity-75' : 'text-[#c8dff2] hover:text-white hover:bg-white/8'}`}
+                  >
+                    <span className="text-[#7ab4d8]">
+                      <NavIcon name={section.items[0].icon} />
+                    </span>
+                    <span className="flex-1 min-w-0 truncate">{section.items[0].label}</span>
+                    {section.locked && <LockBadge />}
+                  </a>
+                ) : (
+                  <Link
+                    to={normalizeAppPath(section.items[0].href)}
+                    onClick={section.locked ? lockedClick : onClose}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium no-underline transition-colors
+                      ${section.locked
+                        ? 'text-[#7f9bb0] cursor-not-allowed opacity-75'
+                        : currentPath === normalizeAppPath(section.items[0].href)
+                        ? 'bg-blue-600 text-white'
+                        : 'text-[#c8dff2] hover:text-white hover:bg-white/8'}`}
+                  >
+                    <span className={currentPath === normalizeAppPath(section.items[0].href) ? 'text-white' : 'text-[#7ab4d8]'}>
+                      <NavIcon name={section.items[0].icon} />
+                    </span>
+                    <span className="flex-1 min-w-0 truncate">{section.items[0].label}</span>
+                    {section.locked && <LockBadge />}
+                  </Link>
+                )
+              ) : (
+                /* Multi-item section - collapsible group */
+                <div className={`mt-1 ${section.hotelRole === 'active' ? 'flex h-full min-h-0 flex-col rounded-lg border border-white/10 bg-white/[0.03] p-1' : ''}`}>
+                  <button
+                    type="button"
+                    onClick={() => toggleSection(section.title)}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wide cursor-pointer font-[inherit] bg-transparent border-0 transition-colors
+                      ${section.locked ? 'text-[#7f9bb0]' : openSection === section.title ? 'text-[#90caf9]' : 'text-[#7ab4d8] hover:text-[#b0d8f0]'}`}
+                    aria-expanded={openSection === section.title}
+                  >
+                    <span className="flex min-w-0 flex-1 items-center gap-2 truncate whitespace-nowrap text-left">
+                      {section.icon && <NavIcon name={section.icon} />}
+                      <span className="min-w-0 truncate">{section.title}</span>
+                      {section.locked && <Lock size={12} strokeWidth={2.2} className="flex-none" />}
+                    </span>
+                    <ChevronDown
+                      size={13}
+                      strokeWidth={2.5}
+                      className={`transition-transform duration-200 ${openSection === section.title ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+
+                  {(openSection === section.title || section.hotelRole === 'active') && (
+                    <div className={`mt-0.5 flex flex-col gap-1 animate-fade-slide-down ${section.hotelRole === 'active' ? 'min-h-0 flex-1 overflow-y-auto pr-1' : ''}`}>
+                      {section.items.map((item) => {
+                        const locked = isNavLocked(section, item);
+                        if (item.children) {
+                          const hasActiveChild = item.children.some((c) => currentPath === normalizeAppPath(c.href));
+                          const isOpen = item.alwaysOpen || openNavItem === item.label || hasActiveChild;
+                          const activeParent = item.href && currentPath === normalizeAppPath(item.href);
+                          const highlighted = activeParent || hasActiveChild;
+                          return (
+                            <div key={item.label}>
+                              <div className={`flex items-center rounded-lg transition-colors ${highlighted ? '' : 'hover:bg-white/8'}`}>
+                                {item.href ? (
+                                  <Link
+                                    to={normalizeAppPath(item.href)}
+                                    onClick={locked ? lockedClick : onClose}
+                                    className={`flex items-center gap-3 flex-1 px-3 py-2 text-[13px] no-underline transition-colors rounded-l-lg
+                                      ${locked ? 'text-[#7f9bb0] cursor-not-allowed' : highlighted ? 'bg-blue-600 text-white' : 'text-[#c8dff2] hover:text-white'}`}
+                                  >
+                                    <span className="flex-none text-white">
+                                      <NavIcon name={item.icon} />
+                                    </span>
+                                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                                    {locked && <LockBadge />}
+                                  </Link>
+                                ) : (
+                                  <span className={`flex items-center gap-3 flex-1 px-3 py-2 text-[13px] ${locked ? 'text-[#7f9bb0]' : highlighted ? 'text-white' : 'text-[#c8dff2]'}`}>
+                                    <span className={`flex-none ${highlighted ? 'text-white' : 'text-[#7ab4d8]'}`}>
+                                      <NavIcon name={item.icon} />
+                                    </span>
+                                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                                    {locked && <LockBadge />}
+                                  </span>
+                                )}
+                                {!item.alwaysOpen && (
+                                  <button
+                                    type="button"
+                                    onClick={locked ? lockedClick : () => setOpenNavItem(isOpen ? null : item.label)}
+                                    className={`flex-none px-2 py-2 cursor-pointer bg-transparent border-0 font-[inherit] transition-colors rounded-r-lg
+                                      ${highlighted ? 'text-white' : 'text-[#7ab4d8] hover:text-white'}`}
+                                    aria-label="toggle sub-items"
+                                  >
+                                    <ChevronDown size={12} strokeWidth={2.5} className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                                  </button>
+                                )}
+                              </div>
+                              {isOpen && (
+                                <div className="ml-7 mt-0.5 flex flex-col gap-0.5">
+                                  {item.children.map((child) => {
+                                    const active = currentPath === normalizeAppPath(child.href);
+                                    return (
+                                      <Link
+                                        key={child.label}
+                                        to={normalizeAppPath(child.href)}
+                                        onClick={locked ? lockedClick : undefined}
+                                        className={`flex items-center px-3 py-1.5 rounded-md text-[12.5px] no-underline transition-colors
+                                          ${locked ? 'text-[#7f9bb0] cursor-not-allowed' : active ? 'bg-blue-600 text-white font-semibold' : 'text-[#c8dff2] hover:text-white hover:bg-white/8'}`}
+                                      >
+                                        <span className="min-w-0 flex-1 truncate">{child.label}</span>
+                                        {locked && <LockBadge />}
+                                      </Link>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        if (item.externalUrl) {
+                          return (
+                            <a
+                              key={item.label}
+                              href={getExternalHref(item)}
+                              onClick={locked ? lockedClick : onClose}
+                              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] no-underline transition-colors ${locked ? 'text-[#7f9bb0] cursor-not-allowed opacity-75' : 'text-[#c8dff2] hover:text-white hover:bg-white/8'}`}
+                            >
+                              <span className="flex-none text-[#7ab4d8]">
+                                <NavIcon name={item.icon} />
+                              </span>
+                              <span className="flex-1 min-w-0 truncate">{item.label}</span>
+                              {locked && <LockBadge />}
+                            </a>
+                          );
+                        }
+
+                        const active = currentPath === normalizeAppPath(item.href);
+                        return (
+                          <Link
+                            key={item.label}
+                            to={normalizeAppPath(item.href)}
+                            onClick={locked ? lockedClick : onClose}
+                            className={locked ? 'flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] no-underline transition-colors text-[#7f9bb0] cursor-not-allowed opacity-75' : active ? 'flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] no-underline transition-colors bg-blue-600 text-white' : 'flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] no-underline transition-colors text-[#c8dff2] hover:text-white hover:bg-white/8'}>
+                            <span className={active ? 'flex-none text-white' : 'flex-none text-[#7ab4d8]'}>
+                              <NavIcon name={item.icon} />
+                            </span>
+                            <span className="flex-1 min-w-0 truncate">{item.label}</span>
+                            {locked && <LockBadge />}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </nav>
+        <div className="sidebar-logout flex-none px-3 pt-1 pb-2">
+          <button
+            type="button"
+            onClick={logout}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium cursor-pointer bg-transparent border-0 font-[inherit] text-[#c8dff2] hover:text-white hover:bg-white/8 transition-colors text-left"
+          >
+            <span className="flex-none text-[#7ab4d8]">
+              <LogOut size={15} strokeWidth={1.75} />
+            </span>
+            Logout
+          </button>
+        </div>
+      </aside>
+    </>
+  );
+}

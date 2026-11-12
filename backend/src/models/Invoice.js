@@ -1,0 +1,176 @@
+import { Schema, model } from 'mongoose';
+
+const lineItemSchema = new Schema({
+  productId:    { type: Schema.Types.ObjectId, ref: 'Product' },
+  variantId:    { type: Schema.Types.ObjectId },
+  originalLineId: { type: String },
+  productCode:  { type: String, default: '', trim: true },
+  barcode:      { type: String, default: '', trim: true },
+  itemType:     { type: String, enum: ['Product', 'Service'], default: 'Product' },
+  productType:  { type: String, default: 'Standard', trim: true },
+  description: { type: String, default: '' },
+  itemDescription: { type: String, default: '' },
+  size:        { type: String, default: '', trim: true },
+  length:      { type: String, default: '', trim: true },
+  modelCode:   { type: String, default: '', trim: true },
+  colour:      { type: String, default: '', trim: true },
+  type:        { type: String, default: '', trim: true },
+  modelNumber: { type: String, default: '', trim: true },
+  brand:       { type: String, default: '', trim: true },
+  category:    { type: String, default: '', trim: true },
+  subCategory: { type: String, default: '', trim: true },
+  material:    { type: String, default: '', trim: true },
+  ram:         { type: String, default: '', trim: true },
+  storage:     { type: String, default: '', trim: true },
+  processor:   { type: String, default: '', trim: true },
+  display:     { type: String, default: '', trim: true },
+  graphics:    { type: String, default: '', trim: true },
+  operatingSystem: { type: String, default: '', trim: true },
+  pattern:     { type: String, default: '', trim: true },
+  quality:     { type: String, default: '', trim: true },
+  ageGroup:    { type: String, default: '', trim: true },
+  imageUrl:    { type: String, default: '', trim: true },
+  fabric:      { type: String, default: '', trim: true },
+  other:       { type: String, default: '', trim: true },
+  hsn:         { type: String, default: '' },
+  qty:         { type: Number, default: 1 },
+  unit:        { type: String, default: 'Nos' },
+  conversionFactor: { type: Number, min: 0 },
+  batchNumber: { type: String, trim: true },
+  rate:        { type: Number, default: 0 },
+  mrp:         { type: Number, default: 0 },
+  sellingPrice:{ type: Number, default: 0 },
+  restockQty:  { type: Number, min: 0 },
+  returnReason: { type: String, default: '', trim: true },
+  returnCondition: { type: String, enum: ['', 'resellable', 'damaged'], default: '' },
+  discount:    { type: Number, default: 0 },
+  discountType:{ type: String, enum: ['percent', 'amount'], default: 'percent' },
+  gstRate:     { type: Number, default: 0 },
+});
+
+const chargeSchema = new Schema({
+  label:   { type: String, default: '' },
+  amount:  { type: String, default: '' },
+  gstRate: { type: Number, default: 18 },
+});
+
+const paymentSplitSchema = new Schema({
+  methodId:  { type: String, default: '', trim: true },
+  method:    { type: String, default: '', trim: true },
+  amount:    { type: Number, default: 0 },
+  reference: { type: String, default: '', trim: true },
+}, { _id: false });
+
+const customFieldSchema = new Schema({
+  key:   { type: String, default: '' },
+  value: { type: String, default: '' },
+});
+
+const invoiceSchema = new Schema({
+  userId:       { type: Schema.Types.ObjectId, ref: 'AppUser', required: true, index: true },
+  businessId:   { type: Schema.Types.ObjectId, ref: 'Business', index: true },
+  branch:       { type: String, trim: true, default: '', index: true },
+  number:       { type: String, required: true, trim: true },
+  documentType: { type: String, default: 'invoice' },
+  // Undefined preserves legacy records; lifecycle helpers treat these as
+  // posted sales / completed returns without inventing dispatch history.
+  lifecycleStatus: { type: String, enum: ['draft', 'posted', 'cancelled'] },
+  fulfillmentStatus: { type: String, enum: ['not-dispatched', 'dispatched', 'unknown'] },
+  returnStatus: { type: String, enum: ['requested', 'received', 'completed'] },
+  postedAt: Date,
+  dispatchedAt: Date,
+  cancelledAt: Date,
+  cancelReason: { type: String, trim: true, maxlength: 1000 },
+  receivedAt: Date,
+  inspectedAt: Date,
+  inspectionNotes: { type: String, trim: true, maxlength: 1000 },
+  workflowRevision: { type: Number, default: 0 },
+  lifecycleEvents: [{
+    action: { type: String, required: true },
+    at: { type: Date, default: Date.now },
+    by: { type: Schema.Types.ObjectId, ref: 'AppUser' },
+    reason: { type: String, maxlength: 1000 },
+    _id: false,
+  }],
+
+  customer: {
+    name:    { type: String, default: '' },
+    gstin:   { type: String, default: '' },
+    phone:   { type: String, default: '' },
+    email:   { type: String, default: '' },
+    address: { type: String, default: '' },
+    city:    { type: String, default: '' },
+    state:   { type: String, default: '' },
+    pincode: { type: String, default: '' },
+    bankName:          { type: String, default: '' },
+    accountHolderName: { type: String, default: '' },
+    accountNumber:     { type: String, default: '' },
+    ifscCode:          { type: String, default: '' },
+    bankBranch:        { type: String, default: '' },
+  },
+
+  meta: {
+    date:          { type: String, default: '' },
+    dueDate:       { type: String, default: '' },
+    poRef:         { type: String, default: '' },
+    placeOfSupply: { type: String, default: '' },
+    invoiceType:   { type: String, default: 'regular' },
+    rcm:           { type: Boolean, default: false },
+    paymentTerms:  { type: String, default: '30' },
+  },
+
+  supplyType: { type: String, default: 'intrastate' },
+  items:      [lineItemSchema],
+
+  shipping: {
+    sameAsBilling: { type: Boolean, default: true },
+    address: { type: String, default: '' },
+    city:    { type: String, default: '' },
+    state:   { type: String, default: '' },
+    pincode: { type: String, default: '' },
+  },
+
+  charges: [chargeSchema],
+
+  // Mixed to avoid conflict with Mongoose's reserved "type" keyword in sub-documents
+  additionalDiscount: { type: Schema.Types.Mixed, default: { type: 'percent', value: '' } },
+
+  tds: {
+    enabled: { type: Boolean, default: false },
+    section: { type: String, default: '194C' },
+    rate:    { type: Number, default: 2 },
+  },
+
+  tcs: {
+    enabled: { type: Boolean, default: false },
+    rate:    { type: Number, default: 1 },
+  },
+
+  advanceReceived: { type: Number, default: 0 },
+  paymentMethod:   { type: String, default: '', trim: true },
+  paymentSplits:   { type: [paymentSplitSchema], default: [] },
+  notes:           { type: String, default: '' },
+  internalNotes:   { type: String, default: '' },
+  terms:           { type: String, default: '' },
+  customFields:    [customFieldSchema],
+
+  recurring: {
+    enabled:   { type: Boolean, default: false },
+    frequency: { type: String, default: 'monthly' },
+    endAfter:  { type: String, default: '' },
+    endDate:   { type: String, default: '' },
+  },
+
+  extra:   { type: Schema.Types.Mixed, default: {} },
+  businessSettingsSnapshot: { type: Schema.Types.Mixed, default: {} },
+  totals:  { type: Schema.Types.Mixed, default: {} },
+}, { timestamps: true });
+
+invoiceSchema.index({ userId: 1, number: 1 }, { unique: true });
+// Sparse: only enforces uniqueness once businessId is populated, so it can't
+// collide with pre-migration documents that don't have one yet.
+invoiceSchema.index({ businessId: 1, documentType: 1, number: 1 }, { unique: true, sparse: true });
+invoiceSchema.index({ userId: 1, documentType: 1, createdAt: -1 });
+invoiceSchema.index({ userId: 1, 'customer.name': 1 });
+
+export const Invoice = model('Invoice', invoiceSchema);

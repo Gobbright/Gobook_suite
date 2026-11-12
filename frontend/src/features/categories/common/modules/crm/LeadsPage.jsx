@@ -1,0 +1,337 @@
+import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
+import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
+import { useAutomobileListingLayout } from '../../../../../hooks/useAutomobileListingLayout.js';
+import { AutomobileLeadsPage } from '../../../automobile/AutomobileLeadsPage.jsx';
+import { useCurrentUser } from '../../../../../hooks/useCurrentUser.js';
+import { useEffect, useRef, useState } from 'react';
+
+import {
+  createLead,
+  deleteLead,
+  getLeads,
+  importLeads,
+  updateLead,
+} from '../../../../../services/crmService.js';
+import { DateRangeFilter } from '../../../../../components/forms/DateRangeFilter.jsx';
+import { SelectDropdown } from '../../../../../components/forms/SelectDropdown.jsx';
+import { ExportButtons } from '../../../../../components/forms/ExportButtons.jsx';
+import { isWithinDateRange } from '../../../../../utils/dateRange.js';
+
+const STATUS_STYLES = {
+  'New':         'bg-blue-100 text-blue-700',
+  'Contacted':   'bg-purple-100 text-purple-700',
+  'In Progress': 'bg-yellow-100 text-yellow-700',
+  'Qualified':   'bg-green-100 text-green-700',
+  'Converted':   'bg-green-100 text-green-700',
+};
+
+const SOURCES  = ['Website', 'Referral', 'Advertisement', 'Social Media', 'Cold Call'];
+const STATUSES = ['New', 'Contacted', 'In Progress', 'Qualified', 'Converted'];
+
+const EMPTY_LEAD = { name: '', company: '', email: '', phone: '', source: 'Website', status: 'New', owner: '' };
+
+const TH = 'text-left text-xs font-semibold uppercase tracking-wide text-[#536173] px-5 py-3 border-b border-[#edf2f7]';
+const TD = 'px-5 py-3.5 border-b border-[#f3f4f6] text-[13px]';
+const AVATAR_COLORS = ['#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#e11d48', '#65a30d'];
+
+const PAGE_SIZE = 5;
+
+function pageNumbers(current, total) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  if (current <= 4) return [1, 2, 3, 4, 5, '...', total];
+  if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+  return [1, '...', current - 1, current, current + 1, '...', total];
+}
+
+export function LeadsPage() {
+  const useAutomobileLayout = useAutomobileListingLayout();
+  return useAutomobileLayout ? <AutomobileLeadsPage /> : <DefaultLeadsPage />;
+}
+
+function DefaultLeadsPage() {
+  const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [leads, setLeads] = useState([]);
+  const [page, setPage] = useState(1);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(EMPTY_LEAD);
+  const [formError, setFormError] = useState('');
+  const [importResult, setImportResult] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef(null);
+
+  function loadLeads() {
+    return getLeads()
+      .then((data) => setLeads(data.leads ?? []))
+      .catch(() => setLeads([]));
+  }
+
+  useEffect(() => {
+    let isMounted = true;
+    getLeads()
+      .then((data) => { if (isMounted) setLeads(data.leads ?? []); })
+      .catch(() => { if (isMounted) setLeads([]); });
+    return () => { isMounted = false; };
+  }, []);
+
+  const filtered = leads.filter((l) => {
+    const matchesSearch = !search ||
+      l.name.toLowerCase().includes(search.toLowerCase()) ||
+      l.company.toLowerCase().includes(search.toLowerCase()) ||
+      l.email.toLowerCase().includes(search.toLowerCase());
+    return matchesSearch && isWithinDateRange(l.createdAt || l.updatedAt, dateFrom, dateTo);
+  });
+
+  useEffect(() => { setPage(1); }, [search, dateFrom, dateTo]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const totalLeads = leads.length;
+  const newLeads   = leads.filter((l) => l.status === 'New').length;
+  const inProgress = leads.filter((l) => l.status === 'In Progress').length;
+  const converted  = leads.filter((l) => l.status === 'Qualified' || l.status === 'Converted').length;
+  const exportColumns = [
+    { label: 'Lead Name', value: (row) => row.name },
+    { label: 'Company', value: (row) => row.company },
+    { label: 'Email', value: (row) => row.email },
+    { label: 'Phone', value: (row) => row.phone },
+    { label: 'Source', value: (row) => row.source },
+    { label: 'Status', value: (row) => row.status },
+    { label: 'Owner', value: (row) => row.owner },
+  ];
+
+  function updateForm(field, value) { setForm((f) => ({ ...f, [field]: value })); }
+  function resetForm() { setForm(EMPTY_LEAD); setEditingId(null); setShowForm(false); setFormError(''); }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setFormError('');
+    try {
+      if (editingId) await updateLead(editingId, form);
+      else await createLead(form);
+      await loadLeads();
+      resetForm();
+    } catch (err) {
+      setFormError(err.message);
+    }
+  }
+  async function handleImportFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    setImporting(true);
+    try {
+      const result = await importLeads(formData);
+      await loadLeads();
+      setImportResult(result);
+    } catch (err) {
+      setImportResult({ error: err.message || 'Import failed' });
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function handleEdit(row) {
+    setForm({ name: row.name, company: row.company, email: row.email, phone: row.phone, source: row.source, status: row.status, owner: row.owner });
+    setEditingId(row._id);
+    setShowForm(true);
+  }
+
+  async function handleDelete(id) {
+    await deleteLead(id);
+    await loadLeads();
+  }
+
+  return (
+    <div className="p-4 md:p-7">
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-1">
+        <div>
+          <nav className="flex items-center gap-1 text-[13px] text-[#536173] mb-1">
+            <a className="text-blue-600 no-underline hover:underline" href="/dashboard">Home</a>
+            <span>›</span><span>CRM</span><span>›</span><span>Leads</span>
+          </nav>
+          <h1 className="m-0 text-[22px] font-bold">Leads</h1>
+          <p className="m-0 text-[13px] text-[#536173] mt-0.5">Track and manage your potential leads</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportFile} />
+          <button type="button" disabled={importing} onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-[#374151] bg-white border border-[#dbe4ef] rounded-md cursor-pointer hover:bg-gray-50 font-[inherit] disabled:opacity-60">
+            <svg fill="none" height="14" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" width="14"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+            {importing ? 'Importing...' : 'Import Excel'}
+          </button>
+          <button className="inline-flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium text-white bg-blue-600 rounded-md cursor-pointer hover:bg-blue-700 border-0 font-[inherit]" type="button" onClick={() => setShowForm(true)}>
+            <svg fill="none" height="14" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24" width="14"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+            Add Lead
+          </button>
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="customer-form-overlay fixed inset-0 z-[100] flex items-start justify-center bg-slate-900/35 px-4 py-8" role="dialog" aria-modal="true" aria-labelledby="lead-modal-title">
+          <button type="button" aria-label="Close add lead" className="absolute inset-0 cursor-default border-0 bg-transparent" onClick={resetForm} />
+        <form className="customer-form-modal relative w-full max-w-[760px] rounded-lg border border-[#cfdced] bg-white p-5 shadow-2xl" onSubmit={handleSubmit}>
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <h3 id="lead-modal-title" className="m-0 text-[18px] font-bold text-[#111827] sm:text-[20px]">{editingId ? 'Edit Lead' : 'Add Lead'}</h3>
+              <p className="m-0 mt-1 text-[12px] text-[#64748b] sm:mt-1.5 sm:text-[13px]">Lead details will help track and convert potential customers.</p>
+            </div>
+            <button className="text-[#536173] hover:text-[#111827] bg-transparent border-0 cursor-pointer text-xl font-[inherit]" type="button" onClick={resetForm}>×</button>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Lead Name *</label>
+              <input className="h-[40px] w-full rounded-md border border-[#dbe4ef] px-3 text-[14px] outline-none focus:border-blue-500 font-[inherit]" placeholder="Lead name" required value={form.name} onChange={(e) => updateForm('name', e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Company</label>
+              <input className="h-[40px] w-full rounded-md border border-[#dbe4ef] px-3 text-[14px] outline-none focus:border-blue-500 font-[inherit]" placeholder="Company" value={form.company} onChange={(e) => updateForm('company', e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Email</label>
+              <input className="h-[40px] w-full rounded-md border border-[#dbe4ef] px-3 text-[14px] outline-none focus:border-blue-500 font-[inherit]" placeholder="lead@email.com" type="email" value={form.email} onChange={(e) => updateForm('email', e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Phone</label>
+              <input className="h-[40px] w-full rounded-md border border-[#dbe4ef] px-3 text-[14px] outline-none focus:border-blue-500 font-[inherit]" placeholder="+91 XXXXX XXXXX" value={form.phone} onChange={(e) => updateForm('phone', e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Source</label>
+              <SelectDropdown buttonClassName="!h-[40px] !rounded-md !border-[#dbe4ef] !px-3 !text-[14px]" value={form.source} onChange={(v) => updateForm('source', v)} options={SOURCES} />
+            </div>
+            <div>
+              <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Status</label>
+              <SelectDropdown buttonClassName="!h-[40px] !rounded-md !border-[#dbe4ef] !px-3 !text-[14px]" value={form.status} onChange={(v) => updateForm('status', v)} options={STATUSES} />
+            </div>
+            <div className="md:col-span-2">
+              <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Owner</label>
+              <input className="h-[40px] w-full rounded-md border border-[#dbe4ef] px-3 text-[14px] outline-none focus:border-blue-500 font-[inherit]" placeholder="Owner" value={form.owner} onChange={(e) => updateForm('owner', e.target.value)} />
+            </div>
+          </div>
+          {formError && <p className="mt-4 text-[13px] text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">{formError}</p>}
+          <div className="mt-5 flex justify-end gap-2.5">
+            <button className="h-10 min-w-[78px] rounded-md border border-[#dbe4ef] bg-white px-4 text-[14px] font-semibold text-[#1f2937] cursor-pointer hover:bg-gray-50 font-[inherit]" type="button" onClick={resetForm}>Cancel</button>
+            <button className="app-save-button h-10 min-w-[132px] rounded-md border-0 bg-blue-600 px-4 text-[14px] font-semibold text-white cursor-pointer hover:bg-blue-700 font-[inherit]" type="submit">{'Save'}</button>
+          </div>
+        </form>
+        </div>
+      )}
+
+      {importResult && (
+        <div className={`mt-4 mb-0 px-4 py-3 rounded-lg text-[13px] border ${importResult.error ? 'bg-red-50 border-red-100 text-red-700' : 'bg-green-50 border-green-100 text-green-700'}`}>
+          {importResult.error ? importResult.error : `Import complete: ${importResult.imported ?? 0} added, ${importResult.updated ?? 0} updated${(importResult.skipped ?? 0) > 0 ? `, ${importResult.skipped} skipped` : ''}.`}
+          {importResult.errors?.length > 0 && <ul className="mt-1 list-disc pl-5 text-[12px]">{importResult.errors.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}{importResult.errors.length > 5 && <li>...and {importResult.errors.length - 5} more</li>}</ul>}
+          <button type="button" onClick={() => setImportResult(null)} className="mt-1 text-[12px] underline bg-transparent border-0 cursor-pointer p-0 text-inherit font-[inherit]">Dismiss</button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 my-5">
+        {[
+          { label: 'Total Leads',  value: totalLeads.toString(), color: '#2563eb', bg: '#eff6ff', icon: 0 },
+          { label: 'New Leads',    value: newLeads.toString(),   color: '#16a34a', bg: '#f0fdf4', icon: 1 },
+          { label: 'In Progress',  value: inProgress.toString(), color: '#d97706', bg: '#fffbeb', icon: 2 },
+          { label: 'Converted',    value: converted.toString(),  color: '#7c3aed', bg: '#f5f3ff', icon: 3 },
+        ].map((s, i) => {
+          const icons = [
+            <svg key="0" fill="none" height="20" stroke={s.color} strokeWidth="2" viewBox="0 0 24 24" width="20"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>,
+            <svg key="1" fill="none" height="20" stroke={s.color} strokeWidth="2" viewBox="0 0 24 24" width="20"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>,
+            <svg key="2" fill="none" height="20" stroke={s.color} strokeWidth="2" viewBox="0 0 24 24" width="20"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+            <svg key="3" fill="none" height="20" stroke={s.color} strokeWidth="2" viewBox="0 0 24 24" width="20"><polyline points="20 6 9 17 4 12"/></svg>,
+          ];
+          return (
+            <div key={s.label} className="bg-white border border-[#dfe7f1] rounded-xl p-4 flex items-center gap-4">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-none" style={{ background: s.bg }}>
+                {icons[i]}
+              </div>
+              <div>
+                <div className="text-xs text-[#536173] mb-0.5">{s.label}</div>
+                <div className="text-[17px] font-bold leading-tight" style={{ color: s.color }}>{s.value}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="bg-white border border-[#dfe7f1] rounded-xl">
+        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-[#edf2f7] flex-wrap">
+          <div className="relative flex-1 max-w-xs">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[#536173]" fill="none" height="13" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" width="13">
+              <circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/>
+            </svg>
+            <input className="border border-[#dbe4ef] rounded-md pl-8 pr-3 py-2 text-[13px] w-full outline-none focus:border-blue-500 font-[inherit]" placeholder="Search leads..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <DateRangeFilter
+            from={dateFrom}
+            to={dateTo}
+            onFromChange={setDateFrom}
+            onToChange={setDateTo}
+            onClear={() => { setDateFrom(''); setDateTo(''); }}
+          />
+          <ExportButtons title="Leads" filename="leads" rows={filtered} columns={exportColumns} />
+        </div>
+        <div className="overflow-x-auto">
+          <BulkDeleteTable onDeleteRecord={record => deleteLead(record._id)} onDeleted={ids => loadLeads()} className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th className={TH}>Lead Name</th>
+                <th className={TH}>Company</th>
+                <th className={TH}>Email</th>
+                <th className={TH}>Phone</th>
+                <th className={TH}>Source</th>
+                <th className={TH}>Status</th>
+                <th className={TH}>Owner</th>
+                <th className={TH}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginated.map((row, i) => (
+                <BulkDeleteRow record={row} key={row._id ?? i} className="hover:bg-gray-50">
+                  <td className={TD}>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-none" style={{ background: AVATAR_COLORS[i % AVATAR_COLORS.length] }}>
+                        {row.name[0]}
+                      </div>
+                      <span className="font-medium text-[#111827]">{row.name}</span>
+                    </div>
+                  </td>
+                  <td className={`${TD} text-[#536173]`}>{row.company}</td>
+                  <td className={`${TD} text-[#536173]`}>{row.email}</td>
+                  <td className={`${TD} text-[#536173]`}>{row.phone}</td>
+                  <td className={`${TD} text-[#536173]`}>{row.source}</td>
+                  <td className={TD}>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${STATUS_STYLES[row.status] ?? 'bg-gray-100 text-gray-700'}`}>
+                      {row.status}
+                    </span>
+                  </td>
+                  <td className={`${TD} text-[#536173]`}>{row.owner}</td>
+                  <td className={TD}>
+                    <div className="flex items-center gap-1">
+                      <RowActionsMenu options={[{value:'edit',label:'Edit',disabled:false}, {value:'delete',label:'Delete',disabled:false}]} onChange={(action) => { if (action === 'edit') (() => handleEdit(row))(); else (() => handleDelete(row._id))(); }} />
+
+                    </div>
+                  </td>
+                </BulkDeleteRow>
+              ))}
+            </tbody>
+          </BulkDeleteTable>
+        </div>
+        <div className="px-5 py-3 border-t border-[#edf2f7] flex items-center justify-between text-[13px] text-[#536173]">
+          <span>Showing {paginated.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}</span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-2 py-1 text-[12px] border border-[#dbe4ef] rounded hover:bg-gray-50 disabled:opacity-40 bg-white font-[inherit] cursor-pointer">←</button>
+            {pageNumbers(page, totalPages).map((p, i) => p === '...' ? (
+              <span key={`ellipsis-${i}`} className="px-2 py-1 text-[12px] text-[#536173]">…</span>
+            ) : (
+              <button key={p} onClick={() => setPage(p)} className={`px-2 py-1 text-[12px] border rounded font-[inherit] cursor-pointer ${p === page ? 'bg-blue-600 text-white border-blue-600' : 'border-[#dbe4ef] hover:bg-gray-50 bg-white'}`}>{p}</button>
+            ))}
+            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-2 py-1 text-[12px] border border-[#dbe4ef] rounded hover:bg-gray-50 disabled:opacity-40 bg-white font-[inherit] cursor-pointer">→</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

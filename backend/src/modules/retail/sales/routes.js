@@ -1,0 +1,190 @@
+import { Router } from 'express';
+import { transitionInvoice, transitionSalesReturn } from './billing-invoicing/lifecycleController.js';
+import { transitionChallan, convertChallan } from './delivery-challan/challanWorkflow.js';
+import {
+  getNextNumber,
+  listInvoices,
+  getInvoice,
+  createInvoice,
+  updateInvoice,
+  deleteInvoice,
+  sendInvoiceEmail,
+} from './billing-invoicing/invoiceController.js';
+import {
+  getNextCreditNoteNumber,
+  listCreditNotes,
+  getCreditNote,
+  createCreditNote,
+  updateCreditNote,
+  deleteCreditNote,
+} from './credit-debit-note/creditNoteController.js';
+import {
+  getNextDebitNoteNumber,
+  listDebitNotes,
+  getDebitNote,
+  createDebitNote,
+  updateDebitNote,
+  deleteDebitNote,
+} from './credit-debit-note/debitNoteController.js';
+import {
+  getNextSalesReturnNumber,
+  listSalesReturnInvoices,
+  getSalesReturnInvoice,
+  listSalesReturns,
+  getSalesReturn,
+  createSalesReturn,
+  updateSalesReturn,
+  deleteSalesReturn,
+} from './sales-return/salesReturnController.js';
+import {
+  getNextSupplierReturnNumber,
+  listSupplierReturnPurchases,
+  getSupplierReturnPurchase,
+  listSupplierReturns,
+  getSupplierReturn,
+  createSupplierReturn,
+  updateSupplierReturn,
+  deleteSupplierReturn,
+} from './supplier-return/supplierReturnController.js';
+import {
+  getNextChallanNumber,
+  listChallans,
+  getChallan,
+  createChallan,
+  updateChallan,
+  deleteChallan,
+} from './delivery-challan/challanController.js';
+import {
+  getNextEInvoiceNumber,
+  listEInvoices,
+  getEInvoice,
+  createEInvoice,
+  updateEInvoice,
+  deleteEInvoice,
+} from './e-invoice/eInvoiceController.js';
+import {
+  getNextEWayBillNumber,
+  listEWayBills,
+  getEWayBill,
+  createEWayBill,
+  updateEWayBill,
+  deleteEWayBill,
+} from './e-way-bill/eWayBillController.js';
+import {
+  listPayments,
+  listCollectionReport,
+  recordPayment,
+  deletePayment,
+  listOutstanding,
+} from './billing-invoicing/paymentController.js';
+import {
+  listCustomers,
+  getCustomer,
+  createCustomer,
+  updateCustomer,
+  deleteCustomer,
+} from './billing-invoicing/customerController.js';
+import {
+  listProducts,
+  getProduct,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+} from './billing-invoicing/productController.js';
+import { uploadProductImage, uploadProductImageFile } from './productImageUpload.js';
+
+export const salesRouter = Router();
+
+// ── Invoice CRUD ─────────────────────────────────────────────────────────────
+// Fixed routes must come before /:id to avoid Express treating them as id params
+salesRouter.get('/invoices/next-number',  getNextNumber);
+salesRouter.get('/invoices/outstanding',  listOutstanding);
+salesRouter.get('/collections/report', listCollectionReport);
+salesRouter.get('/invoices',              listInvoices);
+salesRouter.post('/invoices/:id/workflow', transitionInvoice);
+salesRouter.post('/sales-returns/:id/workflow', transitionSalesReturn);
+salesRouter.post('/invoices',             createInvoice);
+salesRouter.get('/invoices/:id',          getInvoice);
+salesRouter.put('/invoices/:id',          updateInvoice);
+salesRouter.delete('/invoices/:id',       deleteInvoice);
+salesRouter.post('/invoices/:id/send-email',  sendInvoiceEmail);
+salesRouter.get('/invoices/:id/payments',     listPayments);
+salesRouter.post('/invoices/:id/payments',    recordPayment);
+salesRouter.delete('/payments/:id',           deletePayment);
+
+// ── Credit Note CRUD ─────────────────────────────────────────────────────────
+salesRouter.get('/credit-notes/next-number',  getNextCreditNoteNumber);
+salesRouter.get('/credit-notes',              listCreditNotes);
+salesRouter.post('/credit-notes',             createCreditNote);
+salesRouter.get('/credit-notes/:id',          getCreditNote);
+salesRouter.put('/credit-notes/:id',          updateCreditNote);
+salesRouter.delete('/credit-notes/:id',       deleteCreditNote);
+
+// ── Debit Note CRUD ──────────────────────────────────────────────────────────
+salesRouter.get('/debit-notes/next-number',  getNextDebitNoteNumber);
+salesRouter.get('/debit-notes',              listDebitNotes);
+salesRouter.post('/debit-notes',             createDebitNote);
+salesRouter.get('/debit-notes/:id',          getDebitNote);
+salesRouter.put('/debit-notes/:id',          updateDebitNote);
+salesRouter.delete('/debit-notes/:id',       deleteDebitNote);
+
+// ── Sales Return CRUD ────────────────────────────────────────────────────────
+salesRouter.get('/sales-returns/next-number',  getNextSalesReturnNumber);
+salesRouter.get('/sales-returns/invoices', listSalesReturnInvoices);
+salesRouter.get('/sales-returns/invoices/:invoiceId', getSalesReturnInvoice);
+salesRouter.get('/sales-returns',              listSalesReturns);
+salesRouter.post('/sales-returns',             createSalesReturn);
+salesRouter.get('/sales-returns/:id',          getSalesReturn);
+salesRouter.put('/sales-returns/:id',          updateSalesReturn);
+salesRouter.delete('/sales-returns/:id',       deleteSalesReturn);
+
+// ── Supplier Return CRUD ─────────────────────────────────────────────────────
+salesRouter.get('/supplier-returns/next-number',  getNextSupplierReturnNumber);
+salesRouter.get('/supplier-returns/purchases', listSupplierReturnPurchases);
+salesRouter.get('/supplier-returns/purchases/:purchaseId', getSupplierReturnPurchase);
+salesRouter.get('/supplier-returns',              listSupplierReturns);
+salesRouter.post('/supplier-returns',             createSupplierReturn);
+salesRouter.get('/supplier-returns/:id',          getSupplierReturn);
+salesRouter.put('/supplier-returns/:id',          updateSupplierReturn);
+salesRouter.delete('/supplier-returns/:id',       deleteSupplierReturn);
+
+// ── Delivery Challan CRUD ────────────────────────────────────────────────────
+salesRouter.get('/challans/next-number',  getNextChallanNumber);
+salesRouter.get('/challans',              listChallans);
+salesRouter.post('/challans/:id/workflow', transitionChallan);
+salesRouter.post('/challans/:id/convert', convertChallan);
+salesRouter.post('/challans',             createChallan);
+salesRouter.get('/challans/:id',          getChallan);
+salesRouter.put('/challans/:id',          updateChallan);
+salesRouter.delete('/challans/:id',       deleteChallan);
+
+// ── E-Invoice CRUD ───────────────────────────────────────────────────────────
+salesRouter.get('/e-invoices/next-number',  getNextEInvoiceNumber);
+salesRouter.get('/e-invoices',              listEInvoices);
+salesRouter.post('/e-invoices',             createEInvoice);
+salesRouter.get('/e-invoices/:id',          getEInvoice);
+salesRouter.put('/e-invoices/:id',          updateEInvoice);
+salesRouter.delete('/e-invoices/:id',       deleteEInvoice);
+
+// ── E-Way Bill CRUD ──────────────────────────────────────────────────────────
+salesRouter.get('/e-way-bills/next-number',   getNextEWayBillNumber);
+salesRouter.get('/e-way-bills',              listEWayBills);
+salesRouter.post('/e-way-bills',             createEWayBill);
+salesRouter.get('/e-way-bills/:id',          getEWayBill);
+salesRouter.put('/e-way-bills/:id',          updateEWayBill);
+salesRouter.delete('/e-way-bills/:id',       deleteEWayBill);
+
+// ── Customer CRUD ────────────────────────────────────────────────────────────
+salesRouter.get('/customers',             listCustomers);
+salesRouter.post('/customers',            createCustomer);
+salesRouter.get('/customers/:id',         getCustomer);
+salesRouter.put('/customers/:id',         updateCustomer);
+salesRouter.delete('/customers/:id',      deleteCustomer);
+
+// ── Product / catalog CRUD ───────────────────────────────────────────────────
+salesRouter.get('/products',              listProducts);
+salesRouter.post('/product-images',        uploadProductImageFile, uploadProductImage);
+salesRouter.post('/products',             createProduct);
+salesRouter.get('/products/:id',          getProduct);
+salesRouter.put('/products/:id',          updateProduct);
+salesRouter.delete('/products/:id',       deleteProduct);

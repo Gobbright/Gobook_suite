@@ -1,0 +1,66 @@
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { AlertTriangle, Check, CheckCircle2, Package, Plus, RefreshCw, Settings2, XCircle } from 'lucide-react';
+import { api } from '../../../../../services/api.js';
+import { SelectDropdown } from '../../../../../components/forms/SelectDropdown.jsx';
+import { ExportButtons } from '../../../../../components/forms/ExportButtons.jsx';
+import { useStockAlerts } from '../../../../../hooks/useStockAlerts.js';
+import { useCurrentUser } from '../../../../../hooks/useCurrentUser.js';
+import { StockAlertThresholds } from './StockAlertThresholds.jsx';
+import { StockProductDrawer } from './StockProductDrawer.jsx';
+import '../../../automobile/automobileProducts.css';
+import '../../../automobile/automobileStockAlerts.css';
+import '../../../automobile/automobileStockSummary.css';
+
+const EMPTY = { search: '', type: '', supplier: '', warehouse: '', branch: '', brand: '', category: '', reviewed: '' };
+const quantity = (value) => Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 4 });
+const badge = (type) => type === 'Overstock' ? 'ass-overstock' : type === 'Low Stock' || type === 'Reorder Required' ? 'ass-low' : 'ass-out';
+const types = ['Out of Stock', 'Low Stock', 'Overstock', 'Reorder Required'];
+const EMPTY_ROWS = [];
+
+export function StockAlertsView({ automobile = false }) {
+  const user = useCurrentUser();
+  const owner = user?.accountType === 'owner' || user?.role === 'Super Admin' || user?.isSuperAdmin;
+  const canEdit = owner || user?.permissions?.actions?.edit;
+  const canCreate = owner || user?.permissions?.actions?.create;
+  const [filters, setFilters] = useState(EMPTY);
+  const [page, setPage] = useState(1); const [size, setSize] = useState(automobile ? 10 : 50); const [sort, setSort] = useState('priority');
+  const [checked, setChecked] = useState([]); const [detail, setDetail] = useState(null); const [config, setConfig] = useState(undefined);
+  const [busy, setBusy] = useState(false); const [notice, setNotice] = useState(''); const [actionError, setActionError] = useState('');
+  const { response, loading, error, refresh } = useStockAlerts({ ...filters, page, limit: size, sort });
+  const rows = response?.data || EMPTY_ROWS; const total = response?.total || 0; const pages = Math.max(1, Math.ceil(total / size));
+  const allRef = useRef(null); const allChecked = rows.length > 0 && rows.every((row) => checked.includes(row._id));
+  useEffect(() => { if (allRef.current) allRef.current.indeterminate = !allChecked && rows.some((row) => checked.includes(row._id)); }, [allChecked, rows, checked]);
+  useEffect(() => { if (!loading && !error && page > pages) setPage(pages); }, [loading, error, page, pages]);
+  const change = (field, value) => { setFilters((previous) => ({ ...previous, [field]: value })); setPage(1); setChecked([]); };
+  async function review(ids) {
+    setBusy(true); setActionError('');
+    try { const result = await api.invReviewAlerts(ids); setNotice(`${result.reviewed} alerts reviewed in GoBook.`); setChecked([]); refresh(); }
+    catch (failure) { setActionError(failure.message || 'Unable to review alerts.'); refresh(); }
+    finally { setBusy(false); }
+  }
+  async function exportRows() {
+    const all = []; let current = 1;
+    while (true) { const result = await api.invListAlerts({ ...filters, sort, page: current, limit: 500 }); all.push(...result.data); if (!result.data.length || all.length >= result.total) break; current++; }
+    return checked.length ? all.filter((row) => checked.includes(row._id)) : all;
+  }
+  const columns = [['Product', 'description'], ['SKU', 'code'], ['Warehouse', 'warehouse'], ['Branch', 'branch'], ['Physical Stock', 'physicalQty'], ['Reserved', 'reservedQty'], ['Available', 'availableQty'], ['Minimum', 'minStockLevel'], ['Maximum', 'maxStockLevel'], ['Reorder Qty', 'reorderQty'], ['Alert Type', 'alertType'], ['State', 'state']].map(([label, key]) => ({ label, value: (row) => row[key] }));
+  const cards = [['Low Stock Items', response?.stats?.lowStock, AlertTriangle, 'orange'], ['Out of Stock Items', response?.stats?.outOfStock, XCircle, 'red'], ['Overstock', response?.stats?.overstock, Package, 'purple'], ['Reorder Required', response?.stats?.reorderRequired, RefreshCw, 'blue'], ...(automobile ? [['Reviewed Alerts', response?.stats?.reviewed, CheckCircle2, 'green']] : [])];
+  const selectedPurchase = rows.find((row) => checked.includes(row._id) && row.reorderQty > 0 && row.alertType !== 'Overstock');
+  const titleClass = automobile ? 'autop-header' : 'inventory-list-header flex flex-wrap justify-between items-start gap-4 mb-5';
+  const th = automobile ? '' : 'text-left text-xs font-semibold uppercase tracking-wide text-[#536173] px-5 py-3 border-b border-[#edf2f7]';
+  const td = automobile ? '' : 'px-5 py-3.5 border-b border-[#f3f4f6] text-[13px]';
+  return <div className={automobile ? 'inventory-list-page asa-container' : 'inventory-list-page p-4 md:p-7'}><div className={automobile ? 'autop-page asa-page' : 'asa-default'} aria-busy={loading}>
+    <header className={titleClass}><div><h1 className={automobile ? '' : 'm-0 text-[22px] font-bold text-[#111827]'}>Stock Alerts</h1><p className={automobile ? '' : 'text-[13px] text-[#536173]'}>Review out of stock, low stock, overstock and reorder requirements by warehouse and branch.</p></div><div className="autop-actions asa-alert-actions"><Link className="asa-button autop-primary" aria-disabled={!canCreate} onClick={(event) => { if (!canCreate) event.preventDefault(); }} to={selectedPurchase ? `/billing/purchase-order/new?stockAlert=${selectedPurchase._id}` : '/billing/purchase-order/new'}><Plus size={17} />Create Purchase Order</Link><ExportButtons title="Stock Alerts" filename="stock-alerts" rows={loading || error ? [] : rows} columns={columns} fetchRows={loading || error ? undefined : exportRows} /><button type="button" disabled={!canEdit} onClick={() => setConfig(null)}><Settings2 size={16} />Thresholds</button><button type="button" disabled={!canEdit || busy || !checked.length || checked.length > 100 || loading || !!error} onClick={() => review(checked)} title="Review up to 100 unresolved alerts"><Check size={16} />Mark Reviewed</button></div></header>
+    <div className={automobile ? 'autop-stats asa-stats' : 'inventory-list-stats grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5'}>{cards.map(([label, value, Icon, color]) => <article key={label} className={automobile ? `autop-stat autop-${color}` : 'bg-white border border-[#dfe7f1] rounded-xl p-4 flex items-center gap-4 autop-' + color}><div className="autop-stat-icon"><Icon size={24} /></div><div><span className="text-xs text-[#536173]">{label}</span><strong className="block text-[20px]">{loading || error ? '—' : quantity(value)}</strong></div></article>)}</div>
+    <div className={automobile ? 'autop-filters asa-filters' : 'asa-alert-filters bg-white border border-[#dfe7f1] rounded-xl p-4 mb-4'}><input aria-label="Search stock alerts" placeholder="Search product, SKU, barcode, part number or supplier..." value={filters.search} onChange={(event) => change('search', event.target.value)} />{[['type', 'Alert Type', types], ['warehouse', 'Warehouse', response?.filterOptions?.warehouse], ['branch', 'Branch', response?.filterOptions?.branch], ['brand', 'Brand', response?.filterOptions?.brand], ['category', 'Category', response?.filterOptions?.category], ['supplier', 'Supplier', response?.filterOptions?.supplier], ['reviewed', 'Review Status', ['Open', 'Reviewed']]].map(([field, label, options]) => <SelectDropdown key={field} aria-label={label} className="autop-filter" buttonClassName={automobile ? 'autop-dropdown-trigger' : undefined} value={filters[field]} onChange={(value) => change(field, value)} options={[{ value: '', label }, ...(options || []).map((value) => ({ value, label: value }))]} />)}<button type="button" onClick={() => { setFilters(EMPTY); setPage(1); setChecked([]); }}>Clear Filters</button></div>
+    {notice && <p className="asa-notice" role="status">{notice}<button type="button" onClick={() => setNotice('')}>Dismiss</button></p>}
+    {(error || actionError) && <div className="autop-error" role="alert">{error || actionError}<button type="button" onClick={() => { setActionError(''); refresh(); }}>Retry</button></div>}
+    <section className={automobile ? 'autop-list' : 'inventory-list-panel bg-white border border-[#dfe7f1] rounded-xl'}><header className="asa-alert-toolbar"><span>{loading ? 'Refreshing calculated alerts…' : error ? 'Alerts unavailable' : `${total} unresolved alerts`}{checked.length > 0 && ` · ${checked.length} selected`}</span><div><SelectDropdown aria-label="Sort alerts" value={sort} onChange={(value) => { setSort(value); setPage(1); }} options={[{ value: 'priority', label: 'Alert Priority' }, { value: 'name', label: 'Product Name' }, { value: 'stock', label: 'Available Stock' }]} /><button type="button" aria-label="Refresh alerts" disabled={loading} onClick={refresh}><RefreshCw size={15} /></button></div></header>
+    <div className="autop-table-scroll"><table className="asa-alert-table"><thead><tr><th className={th}><input ref={allRef} type="checkbox" aria-label="Select page alerts" checked={allChecked} disabled={loading || !!error || !rows.length} onChange={() => setChecked((previous) => allChecked ? previous.filter((id) => !rows.some((row) => row._id === id)) : [...new Set([...previous, ...rows.map((row) => row._id)])])} /></th>{['Product Name / SKU', 'Brand', 'Warehouse', 'Branch', 'Physical', 'Reserved', 'Available', 'Minimum', 'Maximum', 'Reorder Qty', 'Supplier', 'Alert Type', 'Reviewed', 'Actions'].map((label) => <th key={label} className={th}>{label}</th>)}</tr></thead><tbody>{loading || error || !rows.length ? <tr><td className="ass-table-empty" colSpan={15}>{loading ? 'Loading real stock alerts…' : error ? 'Unable to load alerts. Please retry.' : 'No unresolved stock alerts match these filters.'}</td></tr> : rows.map((row) => <tr key={row._id} className={checked.includes(row._id) ? 'autop-selected bg-blue-50' : ''}><td className={td}><input type="checkbox" aria-label={`Select ${row.description} ${row.alertType}`} checked={checked.includes(row._id)} onChange={() => setChecked((previous) => previous.includes(row._id) ? previous.filter((id) => id !== row._id) : [...previous, row._id])} /></td><td className={td}><button type="button" className="asa-product-link" onClick={() => setDetail(row)}>{row.description}</button><small>{row.code || row.barcode || '—'}</small></td><td className={td}>{row.brand || '—'}</td><td className={td}>{row.warehouse || 'Unassigned'}</td><td className={td}>{row.branch || 'Unassigned'}</td><td className={td}>{quantity(row.physicalQty)}</td><td className={td}>{quantity(row.reservedQty)}</td><td className={td}>{quantity(row.availableQty)}</td><td className={td}>{quantity(row.minStockLevel)}</td><td className={td}>{row.maxStockLevel > 0 ? quantity(row.maxStockLevel) : 'Not set'}</td><td className={td}>{quantity(row.reorderQty)}</td><td className={td}>{row.preferredSupplier || 'Not linked'}</td><td className={td}><span className={`ass-badge ${badge(row.alertType)}`}>{row.alertType}</span><small>{row.thresholdSource}</small></td><td className={td}>{row.state === 'Reviewed' ? 'Yes' : 'No'}</td><td className={td}><div className="asa-alert-row-actions"><button type="button" aria-label={`View ${row.description} stock details`} onClick={() => setDetail(row)}>Details</button><button type="button" disabled={!canEdit} onClick={() => setConfig(row)}>Thresholds</button><button type="button" disabled={!canEdit || busy || row.state === 'Reviewed'} onClick={() => review([row._id])}>Review</button>{canCreate && row.reorderQty > 0 && row.alertType !== 'Overstock' && <Link to={`/billing/purchase-order/new?stockAlert=${row._id}`}>Purchase Order</Link>}</div></td></tr>)}</tbody></table></div>
+    <footer className="asa-alert-toolbar"><div><span>Rows per page</span><SelectDropdown aria-label="Alerts per page" value={size} onChange={(value) => { setSize(Number(value)); setPage(1); }} options={[10, 25, 50, 100]} /></div><span>Page {page} / {pages}</span><div><button type="button" disabled={loading || page <= 1} onClick={() => setPage(page - 1)}>Prev</button><button type="button" disabled={loading || page >= pages} onClick={() => setPage(page + 1)}>Next</button></div></footer></section>
+    <p className="ass-data-note">Updated {response?.refreshedAt ? new Date(response.refreshedAt).toLocaleTimeString() : '—'}. Alerts refresh after local stock changes, on focus and every 30 seconds while visible. Low/out and Reorder Required are separate alert reasons, not duplicate alerts.</p>
+    {detail && <StockProductDrawer product={detail} filters={{ branch: detail.branch, warehouse: detail.warehouse, ...(detail.warehouse ? {} : { warehouseMissing: '1' }), ...(detail.branch ? {} : { branchMissing: '1' }) }} onClose={() => setDetail(null)} />}
+    {config !== undefined && <StockAlertThresholds alert={config} onClose={() => setConfig(undefined)} onSaved={() => { setNotice('Thresholds saved and alerts refreshed.'); refresh(); }} />}
+  </div></div>;
+}

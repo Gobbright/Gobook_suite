@@ -1,0 +1,141 @@
+import { useEffect, useState } from 'react';
+import { Navigate, Outlet as RouterOutlet, useLocation, useNavigate } from 'react-router-dom';
+
+import { AppShell } from '../app/AppShell.jsx';
+import { canAccessPath } from '../constants/navigation.js';
+import { AdminErrorBoundary } from '../features/admin/components/AdminErrorBoundary.jsx';
+import { isAdminAuthenticated } from '../features/admin/adminService.js';
+import { getCurrentUser, isAuthenticated } from '../services/authService.js';
+import { AUTH_PATHS, getLastRoute, SESSION_KEY } from './routeStorage.js';
+
+
+export function GlobalErrorReporter() {
+  useEffect(() => {
+    function reportError(event) {
+      console.error('[GlobalRuntimeError]', event.error || event.message);
+    }
+
+    function reportRejection(event) {
+      console.error('[GlobalUnhandledRejection]', event.reason);
+    }
+
+    window.addEventListener('error', reportError);
+    window.addEventListener('unhandledrejection', reportRejection);
+    return () => {
+      window.removeEventListener('error', reportError);
+      window.removeEventListener('unhandledrejection', reportRejection);
+    };
+  }, []);
+
+  return null;
+}
+export function LegacyHashRedirect() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || hash === '#') return;
+
+    const nextPath = hash.startsWith('#/') ? hash.slice(1) : `/${hash.slice(1)}`;
+    window.history.replaceState(null, '', nextPath || '/dashboard');
+    navigate(nextPath || '/dashboard', { replace: true });
+  }, [navigate]);
+
+  useEffect(() => {
+    if (location.pathname.length <= 1 || !location.pathname.endsWith('/')) return;
+    navigate(`${location.pathname.replace(/\/+$/, '')}${location.search || ''}`, { replace: true });
+  }, [location.pathname, location.search, navigate]);
+
+  return null;
+}
+
+export function RouteMemory() {
+  const location = useLocation();
+
+  useEffect(() => {
+    const el = document.querySelector('main > div.overflow-y-auto');
+    if (el) el.scrollTop = 0;
+
+    if (!AUTH_PATHS.has(location.pathname)) {
+      sessionStorage.setItem(SESSION_KEY, location.pathname);
+    }
+  }, [location.pathname]);
+
+  return null;
+}
+
+export function PublicRoute({ children }) {
+  const user = getCurrentUser();
+  const location = useLocation();
+  if (location.pathname === '/login' || location.pathname === '/register') return children;
+  if (user?.needsOnboarding && !user.businessId && !user.isPlatformOwner) return children;
+  return isAuthenticated() ? <Navigate to={getLastRoute()} replace /> : children;
+}
+
+export function LegacyOnboardingRedirect() {
+  const user = getCurrentUser();
+  if (!isAuthenticated()) return <Navigate to="/login" replace />;
+  if (user?.isPlatformOwner) return <Navigate to="/admin" replace />;
+  return <Navigate to={user?.businessId || user?.onboardingCompleted ? '/dashboard' : '/register'} state={{ email: user?.email }} replace />;
+}
+
+export function AdminProtectedRoute({ children }) {
+  return isAdminAuthenticated()
+    ? <AdminErrorBoundary>{children}</AdminErrorBoundary>
+    : <Navigate to="/login" replace />;
+}
+
+export function ProtectedRoute({ children }) {
+  return isAuthenticated() ? children : <Navigate to="/login" replace />;
+}
+
+export function ProtectedShell() {
+  const location = useLocation();
+  const user = getCurrentUser();
+  const [trialExpiredByClock, setTrialExpiredByClock] = useState(false);
+  const [subscriptionExpiredByClock, setSubscriptionExpiredByClock] = useState(false);
+
+  useEffect(() => {
+    setTrialExpiredByClock(Boolean(
+      user?.subscriptionStatus === 'trial'
+      && user?.trialEndsAt
+      && new Date(user.trialEndsAt).getTime() <= Date.now(),
+    ));
+    setSubscriptionExpiredByClock(Boolean(
+      user?.subscriptionStatus === 'active'
+      && user?.subscriptionExpiresAt
+      && new Date(user.subscriptionExpiresAt).getTime() <= Date.now(),
+    ));
+  }, [user?.subscriptionStatus, user?.trialEndsAt, user?.subscriptionExpiresAt]);
+
+  const trialExpired = Boolean(user?.trialExpired || trialExpiredByClock);
+  const subscriptionExpired = Boolean(subscriptionExpiredByClock || user?.billingStatus === 'SUBSCRIPTION_EXPIRED');
+  const hasActiveAccess = (user?.subscriptionStatus === 'active' && !subscriptionExpired) || (user?.subscriptionStatus === 'trial' && !trialExpired);
+
+  if (user?.needsEmailVerification && location.pathname !== '/verify-email') {
+    return <Navigate to="/verify-email" replace />;
+  }
+  if (user?.needsOnboarding && !user.businessId && !user.isPlatformOwner) {
+    return <Navigate to="/register" state={{ email: user.email }} replace />;
+  }
+  if (!user?.isPlatformOwner && !hasActiveAccess && user?.billingStatus === 'PAYMENT_METHOD_VERIFICATION_PENDING') {
+    return <Navigate to="/payment-method-verification" replace />;
+  }
+  if (!user?.isPlatformOwner && !hasActiveAccess && location.pathname !== '/payment') {
+    return <Navigate to="/payment" replace />;
+  }
+  if (user && !canAccessPath(location.pathname, user)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return (
+    <ProtectedRoute>
+      <AppShell>
+        <RouteMemory />
+        <RouterOutlet />
+      </AppShell>
+    </ProtectedRoute>
+  );
+}
+

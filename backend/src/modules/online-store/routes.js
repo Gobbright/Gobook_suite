@@ -1,0 +1,36 @@
+import { Router } from 'express';
+import { storeImageUpload, uploadStoreImage } from './storeImages.js';
+
+import {
+  createPublicOrder,
+  getPublicStore,
+  getPublicProduct,
+  getOnlineStoreReports,
+  getStoreSettings,
+  listOnlineOrders,
+  listStoreProducts,
+  updateOnlineOrderStatus,
+  updateStoreProduct,
+  updateStoreSettings,
+} from './onlineStoreController.js';
+
+export const onlineStoreRouter = Router();
+export const publicOnlineStoreRouter = Router();
+
+onlineStoreRouter.get('/settings', getStoreSettings);
+onlineStoreRouter.post('/images', (req, res, next) => {
+  storeImageUpload.single('image')(req, res, (error) => {
+    if (error) { error.statusCode = 400; return next(error); }
+    next();
+  });
+}, uploadStoreImage);
+onlineStoreRouter.put('/settings', updateStoreSettings);
+onlineStoreRouter.get('/products', listStoreProducts);
+onlineStoreRouter.put('/products/:id', updateStoreProduct);
+onlineStoreRouter.get('/orders', listOnlineOrders);
+onlineStoreRouter.patch('/orders/:id/status', updateOnlineOrderStatus);
+onlineStoreRouter.get('/reports', getOnlineStoreReports);
+
+publicOnlineStoreRouter.get('/:slug', getPublicStore);
+publicOnlineStoreRouter.get('/:slug/products/:productId', getPublicProduct);
+publicOnlineStoreRouter.post('/:slug/orders', createPublicOrder);

@@ -1,0 +1,266 @@
+import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
+import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
+import { useAutomobileListingLayout } from '../../../../../hooks/useAutomobileListingLayout.js';
+import { AutomobileFollowUpsPage } from '../../../automobile/AutomobileFollowUpsPage.jsx';
+import { useCurrentUser } from '../../../../../hooks/useCurrentUser.js';
+import { useEffect, useState } from 'react';
+
+import {
+  createFollowUp,
+  deleteFollowUp,
+  getFollowUps,
+  updateFollowUp,
+} from '../../../../../services/crmService.js';
+import { SelectDropdown } from '../../../../../components/forms/SelectDropdown.jsx';
+import { DateRangeFilter } from '../../../../../components/forms/DateRangeFilter.jsx';
+import { ExportButtons } from '../../../../../components/forms/ExportButtons.jsx';
+import { isWithinDateRange } from '../../../../../utils/dateRange.js';
+
+const TABS = ['All', 'Overdue'];
+
+const STATUS_STYLES = {
+  Pending: 'bg-yellow-100 text-yellow-700',
+  Done:    'bg-green-100 text-green-700',
+  Overdue: 'bg-red-100 text-red-600',
+};
+
+const EMPTY_FOLLOW_UP = { person: '', regarding: '', date: '', time: '', status: 'Pending', owner: '' };
+
+const TH = 'text-left text-xs font-semibold uppercase tracking-wide text-[#536173] px-5 py-3 border-b border-[#edf2f7]';
+const TD = 'px-5 py-3.5 border-b border-[#f3f4f6] text-[13px]';
+const AVATAR_COLORS = ['#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#e11d48', '#65a30d'];
+
+const PAGE_SIZE = 5;
+
+function pageNumbers(current, total) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  if (current <= 4) return [1, 2, 3, 4, 5, '...', total];
+  if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+  return [1, '...', current - 1, current, current + 1, '...', total];
+}
+
+export function FollowUpsPage() {
+  const useAutomobileLayout = useAutomobileListingLayout();
+  return useAutomobileLayout ? <AutomobileFollowUpsPage /> : <DefaultFollowUpsPage />;
+}
+
+function DefaultFollowUpsPage() {
+  const [tab, setTab] = useState('All');
+  const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [followUps, setFollowUps] = useState([]);
+  const [page, setPage] = useState(1);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(EMPTY_FOLLOW_UP);
+
+  function loadFollowUps() {
+    return getFollowUps()
+      .then((data) => setFollowUps(data.followUps ?? []))
+      .catch(() => setFollowUps([]));
+  }
+
+  useEffect(() => {
+    let isMounted = true;
+    getFollowUps()
+      .then((data) => { if (isMounted) setFollowUps(data.followUps ?? []); })
+      .catch(() => { if (isMounted) setFollowUps([]); });
+    return () => { isMounted = false; };
+  }, []);
+
+  const filtered = followUps.filter((f) => {
+    if (tab === 'Overdue' && f.status !== 'Overdue') return false;
+    if (search && !f.person.toLowerCase().includes(search.toLowerCase()) &&
+        !f.regarding.toLowerCase().includes(search.toLowerCase())) return false;
+    if (!isWithinDateRange(f.date || f.createdAt, dateFrom, dateTo)) return false;
+    return true;
+  });
+
+  useEffect(() => { setPage(1); }, [tab, search, dateFrom, dateTo]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const exportColumns = [
+    { label: 'Person', value: (row) => row.person },
+    { label: 'Regarding', value: (row) => row.regarding },
+    { label: 'Date', value: (row) => row.date },
+    { label: 'Time', value: (row) => row.time },
+    { label: 'Status', value: (row) => row.status },
+    { label: 'Owner', value: (row) => row.owner },
+  ];
+
+  function updateForm(field, value) { setForm((f) => ({ ...f, [field]: value })); }
+  function resetForm() { setForm(EMPTY_FOLLOW_UP); setEditingId(null); setShowForm(false); }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (editingId) await updateFollowUp(editingId, form);
+    else await createFollowUp(form);
+    await loadFollowUps();
+    resetForm();
+  }
+
+  function handleEdit(row) {
+    setForm({ person: row.person, regarding: row.regarding, date: row.date, time: row.time, status: row.status, owner: row.owner });
+    setEditingId(row._id);
+    setShowForm(true);
+  }
+
+  async function handleDelete(id) {
+    await deleteFollowUp(id);
+    await loadFollowUps();
+  }
+
+  return (
+    <div className="p-4 md:p-7">
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-1">
+        <div>
+          <nav className="flex items-center gap-1 text-[13px] text-[#536173] mb-1">
+            <a className="text-blue-600 no-underline hover:underline" href="/dashboard">Home</a>
+            <span>›</span><span>CRM</span><span>›</span><span>Follow Ups</span>
+          </nav>
+          <h1 className="m-0 text-[22px] font-bold">Follow Ups</h1>
+          <p className="m-0 text-[13px] text-[#536173] mt-0.5">Manage your follow ups and never miss any opportunity</p>
+        </div>
+        <button className="inline-flex h-10 w-fit flex-none items-center justify-center gap-1.5 rounded-md border-0 bg-blue-600 px-4 py-2 text-[13px] font-medium text-white cursor-pointer hover:bg-blue-700 font-[inherit] shadow-sm sm:shadow-none" type="button" onClick={() => setShowForm(true)} aria-label="Add Follow Up" title="Add Follow Up">
+          <svg fill="none" height="14" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24" width="14"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+          <span>Add Follow Up</span>
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="customer-form-overlay fixed inset-0 z-[100] flex items-start justify-center bg-slate-900/35 px-4 py-8" role="dialog" aria-modal="true" aria-labelledby="follow-up-modal-title">
+          <button type="button" aria-label="Close follow up form" className="absolute inset-0 cursor-default border-0 bg-transparent" onClick={resetForm} />
+        <form className="customer-form-modal relative w-full max-w-[760px] rounded-lg border border-[#cfdced] bg-white p-5 shadow-2xl" onSubmit={handleSubmit}>
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <h3 id="follow-up-modal-title" className="m-0 text-[18px] font-bold text-[#111827] sm:text-[20px]">{editingId ? 'Edit Follow Up' : 'Add Follow Up'}</h3>
+              <p className="m-0 mt-1 text-[12px] text-[#64748b] sm:text-[13px]">Schedule the next call, visit, or reminder.</p>
+            </div>
+            <button className="text-[#536173] hover:text-[#111827] bg-transparent border-0 cursor-pointer text-xl font-[inherit]" type="button" onClick={resetForm}>×</button>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Lead / Customer *</label>
+              <input className="h-[40px] w-full rounded-md border border-[#dbe4ef] px-3 text-[14px] outline-none focus:border-blue-500 font-[inherit]" placeholder="Lead / Customer name" required value={form.person} onChange={(e) => updateForm('person', e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Owner</label>
+              <input className="h-[40px] w-full rounded-md border border-[#dbe4ef] px-3 text-[14px] outline-none focus:border-blue-500 font-[inherit]" placeholder="Owner" value={form.owner} onChange={(e) => updateForm('owner', e.target.value)} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Regarding</label>
+              <input className="h-[40px] w-full rounded-md border border-[#dbe4ef] px-3 text-[14px] outline-none focus:border-blue-500 font-[inherit]" placeholder="What is this follow up about?" value={form.regarding} onChange={(e) => updateForm('regarding', e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Date</label>
+              <input className="h-[40px] w-full rounded-md border border-[#dbe4ef] px-3 text-[14px] outline-none focus:border-blue-500 font-[inherit]" type="date" value={form.date} onChange={(e) => updateForm('date', e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Time</label>
+              <input className="h-[40px] w-full rounded-md border border-[#dbe4ef] px-3 text-[14px] outline-none focus:border-blue-500 font-[inherit]" type="time" value={form.time} onChange={(e) => updateForm('time', e.target.value)} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Status</label>
+              <SelectDropdown buttonClassName="!h-[40px] !rounded-md !border-[#dbe4ef] !px-3 !text-[14px]" value={form.status} onChange={(v) => updateForm('status', v)} options={['Pending', 'Done', 'Overdue']} />
+            </div>
+          </div>
+          <div className="mt-5 flex justify-end gap-2.5">
+            <button className="h-10 min-w-[78px] rounded-md border border-[#dbe4ef] bg-white px-4 text-[14px] font-semibold text-[#1f2937] cursor-pointer hover:bg-gray-50 font-[inherit]" type="button" onClick={resetForm}>Cancel</button>
+            <button className="app-save-button h-10 min-w-[132px] rounded-md border-0 bg-blue-600 px-4 text-[14px] font-semibold text-white cursor-pointer hover:bg-blue-700 font-[inherit]" type="submit">{'Save'}</button>
+          </div>
+        </form>
+        </div>
+      )}
+
+      <div className="bg-white border border-[#dfe7f1] rounded-xl mt-5">
+        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-[#edf2f7] flex-wrap">
+          <div className="flex gap-1">
+            {TABS.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={`px-3.5 py-1.5 rounded-md text-[13px] font-medium cursor-pointer border-0 font-[inherit] ${tab === t ? 'bg-blue-600 text-white' : 'bg-gray-100 text-[#536173] hover:bg-gray-200'}`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1" />
+          <div className="relative">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[#536173]" fill="none" height="13" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" width="13">
+              <circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/>
+            </svg>
+            <input className="border border-[#dbe4ef] rounded-md pl-8 pr-3 py-2 text-[13px] w-full sm:w-48 outline-none focus:border-blue-500 font-[inherit]" placeholder="Search follow ups..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <DateRangeFilter
+            from={dateFrom}
+            to={dateTo}
+            onFromChange={setDateFrom}
+            onToChange={setDateTo}
+            onClear={() => { setDateFrom(''); setDateTo(''); }}
+          />
+          <ExportButtons title="Follow Ups" filename="follow-ups" rows={filtered} columns={exportColumns} />
+        </div>
+        <div className="overflow-x-auto">
+          <BulkDeleteTable onDeleteRecord={record => deleteFollowUp(record._id)} onDeleted={ids => loadFollowUps()} className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th className={TH}>Lead / Customer</th>
+                <th className={TH}>Regarding</th>
+                <th className={TH}>Follow Up Date</th>
+                <th className={TH}>Time</th>
+                <th className={TH}>Status</th>
+                <th className={TH}>Owner</th>
+                <th className={TH}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginated.map((row, i) => (
+                <BulkDeleteRow record={row} key={row._id ?? i} className="hover:bg-gray-50">
+                  <td className={TD}>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-none" style={{ background: AVATAR_COLORS[i % AVATAR_COLORS.length] }}>
+                        {row.person[0]}
+                      </div>
+                      <span className="font-medium text-[#111827]">{row.person}</span>
+                    </div>
+                  </td>
+                  <td className={`${TD} text-[#536173]`}>{row.regarding}</td>
+                  <td className={`${TD} text-[#536173]`}>{row.date}</td>
+                  <td className={`${TD} text-[#536173]`}>{row.time}</td>
+                  <td className={TD}>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${STATUS_STYLES[row.status] ?? 'bg-gray-100 text-gray-700'}`}>
+                      {row.status}
+                    </span>
+                  </td>
+                  <td className={`${TD} text-[#536173]`}>{row.owner}</td>
+                  <td className={TD}>
+                    <div className="flex items-center gap-1">
+                      <RowActionsMenu options={[{value:'edit',label:'Edit',disabled:false}, {value:'delete',label:'Delete',disabled:false}]} onChange={(action) => { if (action === 'edit') (() => handleEdit(row))(); else (() => handleDelete(row._id))(); }} />
+
+                    </div>
+                  </td>
+                </BulkDeleteRow>
+              ))}
+            </tbody>
+          </BulkDeleteTable>
+        </div>
+        <div className="px-5 py-3 border-t border-[#edf2f7] flex items-center justify-between text-[13px] text-[#536173]">
+          <span>Showing {paginated.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}</span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-2 py-1 text-[12px] border border-[#dbe4ef] rounded hover:bg-gray-50 disabled:opacity-40 bg-white font-[inherit] cursor-pointer">←</button>
+            {pageNumbers(page, totalPages).map((p, i) => p === '...' ? (
+              <span key={`ellipsis-${i}`} className="px-2 py-1 text-[12px] text-[#536173]">…</span>
+            ) : (
+              <button key={p} onClick={() => setPage(p)} className={`px-2 py-1 text-[12px] border rounded font-[inherit] cursor-pointer ${p === page ? 'bg-blue-600 text-white border-blue-600' : 'border-[#dbe4ef] hover:bg-gray-50 bg-white'}`}>{p}</button>
+            ))}
+            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-2 py-1 text-[12px] border border-[#dbe4ef] rounded hover:bg-gray-50 disabled:opacity-40 bg-white font-[inherit] cursor-pointer">→</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

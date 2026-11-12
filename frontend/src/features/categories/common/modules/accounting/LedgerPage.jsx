@@ -1,0 +1,368 @@
+import { useNavigate } from 'react-router-dom';
+import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
+import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
+import { useAutomobileListingLayout } from '../../../../../hooks/useAutomobileListingLayout.js';
+import { AutomobileLedgerPage } from '../../../automobile/AutomobileLedgerPage.jsx';
+import { useEffect, useRef, useState } from 'react';
+
+import {
+  createLedgerAccount,
+  deleteLedgerAccount,
+  getLedgerAccounts,
+  importLedgerAccounts,
+  updateLedgerAccount,
+} from '../../../../../services/accountingService.js';
+import { SelectDropdown } from '../../../../../components/forms/SelectDropdown.jsx';
+import { formatCurrency } from '../../../../../utils/formatCurrency.js';
+import { useCurrentUser } from '../../../../../hooks/useCurrentUser.js';
+
+const ACCOUNT_GROUPS = ['Cash-In-Hand', 'Bank Accounts', 'Sundry Debtors', 'Sundry Creditors', 'Direct Expenses', 'Direct Incomes', 'Fixed Assets', 'Capital Account', 'Contra'];
+const CUSTOM_GROUP_OPTION = 'Add Account';
+const EMPTY_ACCOUNT = { name: '', group: 'Bank Accounts', opening: 0, debit: 0, credit: 0, color: '#2563eb' };
+
+const TH = 'text-left text-xs font-semibold uppercase tracking-wide text-[#536173] px-5 py-3 border-b border-[#edf2f7]';
+const TD = 'px-5 py-3.5 border-b border-[#f3f4f6] text-[13px]';
+
+const PAGE_SIZE = 5;
+
+function pageNumbers(current, total) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  if (current <= 4) return [1, 2, 3, 4, 5, '...', total];
+  if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+  return [1, '...', current - 1, current, current + 1, '...', total];
+}
+
+export function LedgerPage() {
+  const useAutomobileLayout = useAutomobileListingLayout();
+  return useAutomobileLayout ? <AutomobileLedgerPage /> : <DefaultLedgerPage />;
+}
+
+function DefaultLedgerPage() {
+  const navigate = useNavigate();
+  const [search, setSearch] = useState('');
+  const [group, setGroup] = useState('All Groups');
+  const [ledgerData, setLedgerData] = useState([]);
+  const [page, setPage] = useState(1);
+  const [formError, setFormError] = useState('');
+  const [importResult, setImportResult] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef(null);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(EMPTY_ACCOUNT);
+  const [customGroup, setCustomGroup] = useState('');
+
+  function loadLedgerAccounts() {
+    return getLedgerAccounts()
+      .then((data) => setLedgerData(data.accounts ?? []))
+      .catch(() => setLedgerData([]));
+  }
+
+  useEffect(() => {
+    let isMounted = true;
+
+    getLedgerAccounts()
+      .then((data) => {
+        if (isMounted) setLedgerData(data.accounts ?? []);
+      })
+      .catch(() => {
+        if (isMounted) setLedgerData([]);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const filtered = ledgerData.filter((r) => {
+    if (group !== 'All Groups' && r.group !== group) return false;
+    if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const groupFilterOptions = [
+    'All Groups',
+    ...ACCOUNT_GROUPS,
+    ...ledgerData
+      .map((account) => account.group)
+      .filter((accountGroup) => accountGroup && !ACCOUNT_GROUPS.includes(accountGroup)),
+  ];
+
+  useEffect(() => { setPage(1); }, [search, group]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const stats = {
+    total: ledgerData.length,
+    totalDebit: ledgerData.reduce((a, r) => a + r.debit, 0),
+    totalCredit: ledgerData.reduce((a, r) => a + r.credit, 0),
+    createdThisMonth: ledgerData.filter((r) => {
+      if (!r.createdAt) return false;
+      const created = new Date(r.createdAt);
+      const now = new Date();
+      return created.getFullYear() === now.getFullYear() && created.getMonth() === now.getMonth();
+    }).length,
+  };
+  const closing = stats.totalDebit - stats.totalCredit + ledgerData.reduce((a, r) => a + r.opening, 0);
+
+  function getClosing(r) { return r.opening + r.debit - r.credit; }
+  function updateForm(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+    if (field === 'group' && value !== CUSTOM_GROUP_OPTION) setCustomGroup('');
+    setFormError('');
+  }
+  function resetForm() {
+    setForm(EMPTY_ACCOUNT);
+    setCustomGroup('');
+    setEditingId(null);
+    setShowForm(false);
+    setFormError('');
+  }
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setFormError('');
+    const accountGroup = form.group === CUSTOM_GROUP_OPTION ? customGroup.trim() : form.group.trim();
+    if (!accountGroup) {
+      setFormError('Account group is required');
+      return;
+    }
+    const payload = {
+      ...form,
+      group: accountGroup,
+      opening: Number(form.opening),
+      debit: Number(form.debit),
+      credit: Number(form.credit),
+    };
+    try {
+      if (editingId) await updateLedgerAccount(editingId, payload);
+      else await createLedgerAccount(payload);
+      await loadLedgerAccounts();
+      resetForm();
+    } catch (err) {
+      setFormError(err.message);
+    }
+  }
+  async function handleImportFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    setImporting(true);
+    try {
+      const result = await importLedgerAccounts(formData);
+      await loadLedgerAccounts();
+      setImportResult(result);
+    } catch (err) {
+      setImportResult({ error: err.message || 'Import failed' });
+    } finally {
+      setImporting(false);
+    }
+  }
+  function handleEdit(row) {
+    const isKnownGroup = ACCOUNT_GROUPS.includes(row.group);
+    setForm({
+      name: row.name,
+      group: isKnownGroup ? row.group : CUSTOM_GROUP_OPTION,
+      opening: row.opening,
+      debit: row.debit,
+      credit: row.credit,
+      color: row.color,
+    });
+    setCustomGroup(isKnownGroup ? '' : row.group);
+    setEditingId(row._id);
+    setShowForm(true);
+  }
+  async function handleDelete(id) {
+    await deleteLedgerAccount(id);
+    await loadLedgerAccounts();
+  }
+
+  return (
+    <div className="p-4 md:p-7">
+
+      {/* ── Header ── */}
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-1">
+        <div>
+          <nav className="flex items-center gap-1 text-[13px] text-[#536173] mb-1">
+            <a className="text-blue-600 no-underline hover:underline" href="/dashboard">Home</a>
+            <span>›</span><span>Accounting</span><span>›</span><span>Ledger</span>
+          </nav>
+          <h1 className="m-0 text-[22px] font-bold">Ledger</h1>
+          <p className="m-0 text-[13px] text-[#536173] mt-0.5">View all ledger accounts and their balances</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportFile} />
+          <button type="button" disabled={importing} onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-[#374151] bg-white border border-[#dbe4ef] rounded-md cursor-pointer hover:bg-gray-50 font-[inherit] disabled:opacity-60">
+            <svg fill="none" height="14" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" width="14"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+            {importing ? 'Importing...' : 'Import Excel'}
+          </button>
+          <button className="inline-flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium text-white bg-blue-600 rounded-md cursor-pointer hover:bg-blue-700 border-0 font-[inherit]" type="button" onClick={() => navigate('/ledger/new')}>
+            <svg fill="none" height="14" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24" width="14"><line x1="12" x2="12" y1="5" y2="19" /><line x1="5" x2="19" y1="12" y2="12" /></svg>
+            New Ledger
+          </button>
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 md:items-center md:p-4">
+        <form className="flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-[#dfe7f1] bg-white shadow-2xl md:max-w-2xl md:rounded-2xl" onSubmit={handleSubmit}>
+          <div className="sticky top-0 z-10 flex justify-between items-center border-b border-[#edf2f7] bg-white px-4 py-3 md:px-6 md:py-4">
+            <h3 className="m-0 text-[15px] font-semibold">{editingId ? 'Edit Ledger' : 'New Ledger'}</h3>
+            <button className="text-[#536173] hover:text-[#111827] bg-transparent border-0 cursor-pointer text-xl font-[inherit]" type="button" onClick={resetForm}>×</button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4">
+            <div>
+              <label className="block text-[12px] font-medium text-[#374151] mb-1">Account Name <span className="text-red-500">*</span></label>
+              <input className="h-11 w-full border border-[#dbe4ef] rounded-md px-3 py-2 text-[13px] outline-none focus:border-blue-500 font-[inherit]" placeholder="e.g. HDFC Bank Account" required value={form.name} onChange={(e) => updateForm('name', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-[12px] font-medium text-[#374151] mb-1">Account Group <span className="text-red-500">*</span></label>
+              <SelectDropdown
+                value={form.group}
+                onChange={(v) => updateForm('group', v)}
+                options={[
+                  ...ACCOUNT_GROUPS,
+                  { value: CUSTOM_GROUP_OPTION, label: CUSTOM_GROUP_OPTION, activeOption: true },
+                ]}
+              />
+              {form.group === CUSTOM_GROUP_OPTION && (
+                <input
+                  className="mt-2 h-11 w-full border border-[#dbe4ef] rounded-md px-3 py-2 text-[13px] outline-none focus:border-blue-500 font-[inherit]"
+                  placeholder="Type custom group"
+                  required
+                  value={customGroup}
+                  onChange={(event) => { setCustomGroup(event.target.value); setFormError(''); }}
+                />
+              )}
+            </div>
+            <div>
+              <label className="block text-[12px] font-medium text-[#374151] mb-1">Opening Balance (₹)</label>
+              <input className="h-11 w-full border border-[#dbe4ef] rounded-md px-3 py-2 text-[13px] text-right outline-none focus:border-blue-500 font-[inherit]" min="0" placeholder="0.00" type="number" value={form.opening} onChange={(e) => updateForm('opening', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-[12px] font-medium text-[#374151] mb-1">Debit (₹)</label>
+              <input className="h-11 w-full border border-[#dbe4ef] rounded-md px-3 py-2 text-[13px] text-right outline-none focus:border-blue-500 font-[inherit]" min="0" placeholder="0.00" type="number" value={form.debit} onChange={(e) => updateForm('debit', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-[12px] font-medium text-[#374151] mb-1">Credit (₹)</label>
+              <input className="h-11 w-full border border-[#dbe4ef] rounded-md px-3 py-2 text-[13px] text-right outline-none focus:border-blue-500 font-[inherit]" min="0" placeholder="0.00" type="number" value={form.credit} onChange={(e) => updateForm('credit', e.target.value)} />
+            </div>
+          </div>
+          {formError && <p className="text-[13px] text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2 mt-3">{formError}</p>}
+          </div>
+          <div className="sticky bottom-0 z-10 grid grid-cols-2 gap-2 border-t border-[#edf2f7] bg-white px-4 py-3 md:flex md:justify-end md:px-6 md:py-4">
+            <button className="h-10 px-4 py-2 text-[13px] font-medium text-gray-700 bg-white border border-[#dbe4ef] rounded-md cursor-pointer hover:bg-gray-50 font-[inherit]" type="button" onClick={resetForm}>Cancel</button>
+            <button className="app-save-button h-10 px-4 py-2 text-[13px] font-medium text-white bg-blue-600 rounded-md cursor-pointer hover:bg-blue-700 border-0 font-[inherit]" type="submit">{'Save'}</button>
+          </div>
+        </form>
+        </div>
+      )}
+
+      {importResult && (
+        <div className={`mt-4 mb-0 px-4 py-3 rounded-lg text-[13px] border ${importResult.error ? 'bg-red-50 border-red-100 text-red-700' : 'bg-green-50 border-green-100 text-green-700'}`}>
+          {importResult.error ? importResult.error : `Import complete: ${importResult.imported ?? 0} added, ${importResult.updated ?? 0} updated${(importResult.skipped ?? 0) > 0 ? `, ${importResult.skipped} skipped` : ''}.`}
+          {importResult.errors?.length > 0 && <ul className="mt-1 list-disc pl-5 text-[12px]">{importResult.errors.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}{importResult.errors.length > 5 && <li>...and {importResult.errors.length - 5} more</li>}</ul>}
+          <button type="button" onClick={() => setImportResult(null)} className="mt-1 text-[12px] underline bg-transparent border-0 cursor-pointer p-0 text-inherit font-[inherit]">Dismiss</button>
+        </div>
+      )}
+
+      {/* ── Stats ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 my-5">
+        {[
+          { label: 'Total Accounts', value: String(stats.total), sub: '+2 this month', icon: '📋', bg: '#eff6ff', color: '#2563eb' },
+          { label: 'Total Debit Balance', value: formatCurrency(stats.totalDebit), sub: 'All accounts', icon: '📈', bg: '#fef2f2', color: '#dc2626' },
+          { label: 'Total Credit Balance', value: formatCurrency(stats.totalCredit), sub: 'All accounts', icon: '📉', bg: '#f0fdf4', color: '#16a34a' },
+          { label: 'Closing Balance', value: formatCurrency(Math.abs(closing)), sub: closing >= 0 ? 'Debit' : 'Credit', icon: '💰', bg: '#fffbeb', color: '#d97706' },
+        ].map((s) => (
+          <div key={s.label} className="bg-white border border-[#dfe7f1] rounded-xl p-4 flex items-center gap-4">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-none" style={{ background: s.bg }}>
+              {s.icon}
+            </div>
+            <div>
+              <div className="text-xs text-[#536173] mb-0.5">{s.label}</div>
+              <div className="text-[17px] font-bold leading-tight" style={{ color: s.color }}>{s.value}</div>
+              <div className="text-xs text-[#536173] mt-0.5">{s.label === 'Total Accounts' ? `${stats.createdThisMonth} this month` : s.sub}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Table Card ── */}
+      <div className="bg-white border border-[#dfe7f1] rounded-xl">
+        <div className="grid grid-cols-2 items-center gap-2 px-3 py-3 border-b border-[#edf2f7] md:flex md:flex-wrap md:gap-3 md:px-5 md:py-3.5">
+          <div className="relative col-span-2 min-w-0 md:col-span-1 md:flex-1 md:max-w-sm">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[#536173]" fill="none" height="13" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" width="13">
+              <circle cx="11" cy="11" r="8" /><line x1="21" x2="16.65" y1="21" y2="16.65" />
+            </svg>
+            <input className="h-11 w-full border border-[#dbe4ef] rounded-lg pl-9 pr-3 py-2 text-[13px] outline-none focus:border-blue-500 font-[inherit] md:h-auto md:rounded-md md:pl-8" placeholder="Search ledger accounts..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <SelectDropdown className="min-w-0 md:w-40 md:flex-none" buttonClassName="h-11 rounded-lg md:h-auto md:rounded-md" value={group} onChange={setGroup} options={groupFilterOptions} />
+          <button onClick={() => { setGroup('All Groups'); setSearch(''); setPage(1); }} className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-[#dbe4ef] bg-white px-3.5 py-2 text-[13px] font-medium text-gray-700 cursor-pointer hover:bg-gray-50 font-[inherit] md:h-auto md:rounded-md" type="button">
+            <svg fill="none" height="13" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" width="13"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
+            Reset Filters
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <BulkDeleteTable onDeleteRecord={record => deleteLedgerAccount(record._id)} onDeleted={ids => loadLedgerAccounts()} className="w-full border-collapse min-w-200">
+            <thead>
+              <tr>
+                <th className={TH}>Account Name</th>
+                <th className={TH}>Group</th>
+                <th className={`${TH} text-right`}>Opening Balance</th>
+                <th className={`${TH} text-right`}>Debit (₹)</th>
+                <th className={`${TH} text-right`}>Credit (₹)</th>
+                <th className={`${TH} text-right`}>Closing Balance</th>
+                <th className={TH}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginated.map((row) => {
+                const cl = getClosing(row);
+                const isCr = cl < 0;
+                return (
+                  <BulkDeleteRow record={row} key={row._id} className="hover:bg-gray-50">
+                    <td className={TD}>
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-none" style={{ background: row.color }}>
+                          {row.name?.[0] ?? '?'}
+                        </div>
+                        <span className="font-medium text-[#111827]">{row.name}</span>
+                      </div>
+                    </td>
+                    <td className={`${TD} text-[#536173]`}>{row.group}</td>
+                    <td className={`${TD} text-right`}>{formatCurrency(row.opening)}</td>
+                    <td className={`${TD} text-right`}>{row.debit > 0 ? formatCurrency(row.debit) : <span className="text-[#cbd5e1]">—</span>}</td>
+                    <td className={`${TD} text-right`}>{row.credit > 0 ? formatCurrency(row.credit) : <span className="text-[#cbd5e1]">—</span>}</td>
+                    <td className={`${TD} text-right font-semibold ${isCr ? 'text-green-700' : 'text-[#111827]'}`}>
+                      {formatCurrency(Math.abs(cl))}{isCr && <span className="ml-1 text-xs font-normal text-green-600">CR</span>}
+                    </td>
+                    <td className={TD}>
+                      <div className="flex items-center gap-1">
+                        <RowActionsMenu options={[{value:'edit',label:'Edit',disabled:false}, {value:'delete',label:'Delete',disabled:false}]} onChange={(action) => { if (action === 'edit') (() => handleEdit(row))(); else (() => handleDelete(row._id))(); }} />
+
+                      </div>
+                    </td>
+                  </BulkDeleteRow>
+                );
+              })}
+            </tbody>
+          </BulkDeleteTable>
+        </div>
+        <div className="px-5 py-3 border-t border-[#edf2f7] flex items-center justify-between text-[13px] text-[#536173]">
+          <span>Showing {paginated.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}</span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-2 py-1 text-[12px] border border-[#dbe4ef] rounded hover:bg-gray-50 disabled:opacity-40 bg-white font-[inherit] cursor-pointer">←</button>
+            {pageNumbers(page, totalPages).map((p, i) => p === '...' ? (
+              <span key={`ellipsis-${i}`} className="px-2 py-1 text-[12px] text-[#536173]">…</span>
+            ) : (
+              <button key={p} onClick={() => setPage(p)} className={`px-2 py-1 text-[12px] border rounded font-[inherit] cursor-pointer ${p === page ? 'bg-blue-600 text-white border-blue-600' : 'border-[#dbe4ef] hover:bg-gray-50 bg-white'}`}>{p}</button>
+            ))}
+            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-2 py-1 text-[12px] border border-[#dbe4ef] rounded hover:bg-gray-50 disabled:opacity-40 bg-white font-[inherit] cursor-pointer">→</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

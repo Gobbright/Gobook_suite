@@ -1,0 +1,139 @@
+import { LedgerWorkspace } from '../features/categories/common/modules/accounting/LedgerWorkspace.jsx';
+import { InventoryListLayout } from '../features/categories/automobile/InventoryListLayout.jsx';
+import { BalanceSheetPage } from '../features/categories/common/modules/accounting/BalanceSheetPage.jsx';
+import { AccountingReportsPage } from '../features/categories/common/modules/accounting/AccountingReportsPage.jsx';
+import { BankBookPage } from '../features/categories/common/modules/accounting/BankBookPage.jsx';
+import { BankReconciliationPage } from '../features/categories/common/modules/accounting/BankReconciliationPage.jsx';
+import { CashBookPage } from '../features/categories/common/modules/accounting/CashBookPage.jsx';
+import { AccountingVoucherPage } from '../features/categories/common/modules/accounting/AccountingVoucherPage.jsx';
+import { JournalEntryPage } from '../features/categories/common/modules/accounting/JournalEntryPage.jsx';
+import { LedgerPage } from '../features/categories/common/modules/accounting/LedgerPage.jsx';
+import { PnlPage } from '../features/categories/common/modules/accounting/PnlPage.jsx';
+import { TrialBalancePage } from '../features/categories/common/modules/accounting/TrialBalancePage.jsx';
+import { DeletePeriodPage, ExportDataPage, ImportDataPage } from '../features/categories/common/modules/data-management/DataManagementPage.jsx';
+import { CustomersPage } from '../features/categories/common/modules/crm/CustomersPage.jsx';
+import { FollowUpsPage } from '../features/categories/common/modules/crm/FollowUpsPage.jsx';
+import { LeadsPage } from '../features/categories/common/modules/crm/LeadsPage.jsx';
+import { GstDashboard } from '../features/categories/common/modules/gst/GstDashboard.jsx';
+import { GstReconciliation } from '../features/categories/common/modules/gst/GstReconciliation.jsx';
+import { GstReports } from '../features/categories/common/modules/gst/GstReports.jsx';
+import { Gstr1Page } from '../features/categories/common/modules/gst/Gstr1Page.jsx';
+import { Gstr3bPage } from '../features/categories/common/modules/gst/Gstr3bPage.jsx';
+import { Gstr9Page } from '../features/categories/common/modules/gst/Gstr9Page.jsx';
+import { AttendancePage } from '../features/categories/common/modules/hr-payroll/AttendancePage.jsx';
+import { DocumentsPage } from '../features/categories/common/modules/hr-payroll/DocumentsPage.jsx';
+import { EmployeesPage } from '../features/categories/common/modules/hr-payroll/EmployeesPage.jsx';
+import { LeaveManagementPage } from '../features/categories/common/modules/hr-payroll/LeaveManagementPage.jsx';
+import { PayrollPage } from '../features/categories/common/modules/hr-payroll/PayrollPage.jsx';
+import { BarcodePage } from '../features/categories/common/modules/inventory/BarcodePage.jsx';
+import { BrandsPage } from '../features/categories/common/modules/inventory/BrandsPage.jsx';
+import { CategoriesPage } from '../features/categories/common/modules/inventory/CategoriesPage.jsx';
+import { ProductMastersPage } from '../features/categories/common/modules/inventory/ProductMastersPage.jsx';
+import { SubcategoriesPage } from '../features/categories/common/modules/inventory/SubcategoriesPage.jsx';
+import { ProductsPage, ServiceFormPage } from '../features/categories/common/modules/inventory/ProductsPage.jsx';
+import { StockAlertsPage } from '../features/categories/common/modules/inventory/StockAlertsPage.jsx';
+import { StockInPage } from '../features/categories/common/modules/inventory/StockInPage.jsx';
+import { StockLedgerPage } from '../features/categories/common/modules/inventory/StockLedgerPage.jsx';
+import { StockOutPage } from '../features/categories/common/modules/inventory/StockOutPage.jsx';
+import { StockSummaryPage } from '../features/categories/common/modules/inventory/StockSummaryPage.jsx';
+import { WarehousePage } from '../features/categories/common/modules/inventory/WarehousePage.jsx';
+import { EmailMarketingPage } from '../features/categories/common/modules/more-modules/EmailMarketingPage.jsx';
+import { OnlineStoreLitePage } from '../features/categories/common/modules/online-store/OnlineStoreLitePage.jsx';
+import { ReportsPage } from '../features/categories/common/modules/more-modules/ReportsPage.jsx';
+import { SalesManagementPage } from '../features/categories/common/modules/more-modules/SalesManagementPage.jsx';
+import { VendorManagementPage } from '../features/categories/common/modules/more-modules/VendorManagementPage.jsx';
+import { WhatsAppProviderPage } from '../features/categories/common/modules/more-modules/WhatsAppProviderPage.jsx';
+import { WhatsAppBusinessPage } from '../features/categories/common/modules/more-modules/WhatsAppBusinessPage.jsx';
+import { ModuleReportsPage } from '../features/categories/common/modules/reports/ModuleReportsPage.jsx';
+import { AuditReportPage } from '../features/categories/common/modules/settings/AuditReportPage.jsx';
+import { BusinessSettingsPage } from '../features/categories/common/modules/settings/BusinessSettingsPage.jsx';
+import { MultiBranchPage } from '../features/categories/common/modules/settings/MultiBranchPage.jsx';
+import { TemplatesPage } from '../features/categories/common/modules/settings/TemplatesPage.jsx';
+import { UsersRolesPage } from '../features/categories/common/modules/settings/UsersRolesPage.jsx';
+
+// Common to every category (GST, Accounting, CRM, Inventory, HR & Payroll, More Modules, Settings).
+export const commonRoutes = [
+  { path: '/gst-dashboard', element: <GstDashboard /> },
+  { path: '/gstr-1', element: <Gstr1Page /> },
+  { path: '/gstr-3b', element: <Gstr3bPage /> },
+  { path: '/gstr-9', element: <Gstr9Page /> },
+  { path: '/gst-reconciliation', element: <GstReconciliation /> },
+  { path: '/gst-reports', element: <GstReports /> },
+
+  { path: '/vouchers', element: <AccountingVoucherPage /> },
+  { path: '/vouchers/new', element: <AccountingVoucherPage /> },
+  { path: '/accounting-reports', element: <AccountingReportsPage /> },
+  { path: '/ledger', element: <LedgerPage /> },
+  { path: '/ledger/new', element: <LedgerWorkspace /> },
+  { path: '/journal-entry', element: <JournalEntryPage /> },
+  { path: '/journal-entry/new', element: <AccountingVoucherPage journal /> },
+  { path: '/journal-entry/:id/edit', element: <AccountingVoucherPage journal /> },
+  { path: '/trial-balance', element: <TrialBalancePage /> },
+  { path: '/pnl', element: <PnlPage /> },
+  { path: '/balance-sheet', element: <BalanceSheetPage /> },
+  { path: '/cash-book', element: <CashBookPage /> },
+  { path: '/bank-book', element: <BankBookPage /> },
+  { path: '/bank-reconciliation', element: <BankReconciliationPage /> },
+
+  { path: '/customers', element: <CustomersPage /> },
+  { path: '/leads', element: <LeadsPage /> },
+  { path: '/follow-ups', element: <FollowUpsPage /> },
+  { path: '/crm-reports', element: <ModuleReportsPage type="crm" /> },
+  { path: '/collections-reports', element: <ModuleReportsPage type="collections" /> },
+  { path: '/accounting-module-reports', element: <ModuleReportsPage type="accounting" /> },
+  { path: '/tax-review-reports', element: <ModuleReportsPage type="tax" /> },
+  { path: '/expenses-reports', element: <ModuleReportsPage type="expenses" /> },
+  { path: '/ecommerce-reports', element: <ModuleReportsPage type="ecommerce" /> },
+  { path: '/audit-exception-reports', element: <ModuleReportsPage type="audit" /> },
+
+  { path: '/products', element: <InventoryListLayout><ProductsPage initialItemType="Product" lockedItemType="Product" /></InventoryListLayout> },
+  { path: '/services', element: <InventoryListLayout><ProductsPage initialItemType="Service" lockedItemType="Service" /></InventoryListLayout> },
+  { path: '/services/new', element: <ServiceFormPage /> },
+  { path: '/services/:id/edit', element: <ServiceFormPage /> },
+  { path: '/product-masters', element: <InventoryListLayout><ProductMastersPage /></InventoryListLayout> },
+  { path: '/product-categories', element: <InventoryListLayout><CategoriesPage /></InventoryListLayout> },
+  { path: '/product-subcategories', element: <InventoryListLayout><SubcategoriesPage /></InventoryListLayout> },
+  { path: '/brands', element: <InventoryListLayout><BrandsPage /></InventoryListLayout> },
+  { path: '/stock-summary', element: <InventoryListLayout><StockSummaryPage /></InventoryListLayout> },
+  { path: '/stock-ledger', element: <InventoryListLayout><StockLedgerPage /></InventoryListLayout> },
+  { path: '/inventory-reports', element: <ModuleReportsPage type="inventory" /> },
+  { path: '/service-reports', element: <ModuleReportsPage type="service" /> },
+  { path: '/stock-in', element: <InventoryListLayout><StockInPage /></InventoryListLayout> },
+  { path: '/stock-out', element: <InventoryListLayout><StockOutPage /></InventoryListLayout> },
+  { path: '/warehouse', element: <InventoryListLayout><WarehousePage /></InventoryListLayout> },
+  { path: '/barcode', element: <InventoryListLayout><BarcodePage /></InventoryListLayout> },
+  { path: '/stock-alerts', element: <InventoryListLayout><StockAlertsPage /></InventoryListLayout> },
+
+  { path: '/employees', element: <EmployeesPage /> },
+  { path: '/attendance', element: <AttendancePage /> },
+  { path: '/payroll', element: <PayrollPage /> },
+  { path: '/leave-management', element: <LeaveManagementPage /> },
+  { path: '/documents', element: <DocumentsPage /> },
+  { path: '/hr-reports', element: <ModuleReportsPage type="hr" /> },
+
+  { path: '/sales-management', element: <SalesManagementPage /> },
+  { path: '/vendor-management', element: <VendorManagementPage /> },
+  { path: '/whatsapp-business', element: <WhatsAppProviderPage /> },
+  { path: '/whatsapp/settings', element: <WhatsAppProviderPage /> },
+  { path: '/online-store', element: <OnlineStoreLitePage /> },
+  { path: '/online-store/:section', element: <OnlineStoreLitePage /> },
+  { path: '/email-marketing', element: <EmailMarketingPage /> },
+  { path: '/whatsapp-marketing', element: <WhatsAppBusinessPage /> },
+  { path: '/reports', element: <ReportsPage /> },
+
+  { path: '/multi-branch', element: <MultiBranchPage /> },
+  { path: '/users-roles', element: <UsersRolesPage /> },
+  { path: '/audit-report', element: <AuditReportPage /> },
+  { path: '/business-settings', element: <BusinessSettingsPage /> },
+  { path: '/templates', element: <TemplatesPage /> },
+  { path: '/data-management', element: <ExportDataPage /> },
+  { path: '/data-management/export', element: <ExportDataPage /> },
+  { path: '/data-management/import', element: <ImportDataPage /> },
+  { path: '/data-management/delete-period', element: <DeletePeriodPage /> },
+];
+
+// Retail-only (Sales / Billing reports Ã¢â‚¬â€ tied to the Sales nav section, which stays Retail-exclusive).
+export const retailRoutes = [
+  { path: '/sales-reports', element: <ModuleReportsPage type="sales" /> },
+  { path: '/purchase-reports', element: <ModuleReportsPage type="purchase" /> },
+];
