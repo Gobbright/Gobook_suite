@@ -1,3 +1,4 @@
+import { notify } from '../../../services/notifications.js';
 import { useMemo, useState } from 'react';
 import { CheckCircle2, FileSignature, FileText } from 'lucide-react';
 
@@ -103,7 +104,7 @@ export function OperationNotesPage() {
 
   async function finalizeNote() {
     if (!form.preOpDiagnosis || !form.postOpDiagnosis || !form.procedurePerformed) {
-      window.alert('Diagnosis and procedure performed are required before finalizing.');
+      notify('Diagnosis and procedure performed are required before finalizing.');
       return;
     }
     const finalPayload = payload('FINALIZED');

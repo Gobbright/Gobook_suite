@@ -3,6 +3,7 @@ import { BusinessSettings } from '../../../models/BusinessSettings.js';
 import { httpError } from '../../../utils/httpError.js';
 import { dispatchCampaign } from '../../../jobs/emailCampaigns.js';
 import { buildSmtpOverride, sendMail, textToEmailHtml, verifySmtp } from '../../../utils/mailer.js';
+import { businessEmailSettings, canManageBusinessEmail, isBusinessEmailVerified } from '../../../services/businessEmail.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -26,15 +27,20 @@ function campaignPayload(body = {}) {
 // GET /api/more-modules/email-settings
 export async function getEmailSettings(req, res, next) {
   try {
-    const settings = await BusinessSettings.findOne({ userId: req.user.id }).select('+emailSmtpPass').lean();
+    const settings = await businessEmailSettings(req.user);
     const defaultEmail = settings?.emailSmtpUser || settings?.businessEmail || req.user.email || '';
     res.json({
-      configured: Boolean(settings?.emailSmtpHost && settings?.emailSmtpUser && settings?.emailSmtpPass && settings?.emailSmtpVerifiedAt),
+      configured: isBusinessEmailVerified(settings),
+      canManage: canManageBusinessEmail(req.user),
       email: defaultEmail,
+      businessName: settings?.businessName || req.user.businessName || req.user.name || 'Business',
+      logoUrl: settings?.logoUrl || '',
       host: settings?.emailSmtpHost || 'smtp.gmail.com',
       port: settings?.emailSmtpPort || 587,
       secure: Boolean(settings?.emailSmtpSecure),
       verifiedAt: settings?.emailSmtpVerifiedAt || null,
+      loginUsername: req.user.email || '',
+      employeeLoginPath: '/employee-login',
     });
   } catch (err) {
     next(err);
@@ -47,7 +53,7 @@ export async function saveEmailSettings(req, res, next) {
     const email = String(req.body.email || '').trim().toLowerCase();
     const appPassword = String(req.body.appPassword || '').replace(/\s/g, '');
     if (!EMAIL_RE.test(email)) return next(httpError(400, 'Enter a valid Gmail address.'));
-    if (appPassword.length < 12) return next(httpError(400, 'Enter your 16-character Google app password.'));
+    if (appPassword.length !== 16) return next(httpError(400, 'Enter your 16-character Google app password.'));
 
     const smtp = { host: 'smtp.gmail.com', port: 587, secure: false, user: email, pass: appPassword };
     await verifySmtp(smtp);
@@ -58,7 +64,7 @@ export async function saveEmailSettings(req, res, next) {
     );
     res.json({ configured: true, email: settings.emailSmtpUser, verifiedAt: settings.emailSmtpVerifiedAt, message: 'Gmail connected and app password verified.' });
   } catch (err) {
-    next(httpError(400, 'Could not verify Gmail. Check the selected email and Google app password.'));
+    next(httpError(400, 'Could not verify the Google app password. Check that it belongs to the selected Gmail address.'));
   }
 }
 
@@ -67,7 +73,7 @@ export async function saveEmailSettings(req, res, next) {
 // explicitly supplied valid address) so the business can confirm delivery.
 export async function sendEmailSettingsTest(req, res, next) {
   try {
-    const settings = await BusinessSettings.findOne({ userId: req.user.id }).select('+emailSmtpPass');
+    const settings = await businessEmailSettings(req.user);
     if (!settings?.emailSmtpHost || !settings?.emailSmtpUser || !settings?.emailSmtpPass || !settings?.emailSmtpVerifiedAt) {
       return next(httpError(400, 'Verify your Gmail app password before sending a test email.'));
     }
@@ -90,7 +96,7 @@ export async function sendEmailSettingsTest(req, res, next) {
 // without creating or sending the full campaign audience.
 export async function sendCampaignTest(req, res, next) {
   try {
-    const settings = await BusinessSettings.findOne({ userId: req.user.id }).select('+emailSmtpPass');
+    const settings = await businessEmailSettings(req.user);
     if (!settings?.emailSmtpHost || !settings?.emailSmtpUser || !settings?.emailSmtpPass || !settings?.emailSmtpVerifiedAt) {
       return next(httpError(400, 'Verify your Gmail app password before sending a test email.'));
     }
@@ -203,7 +209,7 @@ export async function sendCampaignNow(req, res, next) {
     if (!campaign) return next(httpError(404, 'Campaign not found'));
     if (!campaign.recipients.length) return next(httpError(400, 'Add at least one recipient first'));
 
-    const settings = await BusinessSettings.findOne({ userId }).select('+emailSmtpPass');
+    const settings = await businessEmailSettings(req.user);
     if (!settings?.emailSmtpHost || !settings?.emailSmtpUser || !settings?.emailSmtpPass || !settings?.emailSmtpVerifiedAt) {
       return next(httpError(400, 'Verify the Gmail app password in Email Marketing Settings before sending campaigns.'));
     }

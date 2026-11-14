@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
 import { useEffect, useState } from 'react';
@@ -164,7 +165,7 @@ export function SubcategoriesPage() {
     if (!window.confirm('Delete this subcategory? Products already tagged with it will keep the subcategory name as free text.')) return;
     api.invDeleteSubcategory(id)
       .then(() => { loadAll(); })
-      .catch((e) => alert(e.message || 'Failed to delete subcategory'));
+      .catch((e) => notify(e.message || 'Failed to delete subcategory'));
   }
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));

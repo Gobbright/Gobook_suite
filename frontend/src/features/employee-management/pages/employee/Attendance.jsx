@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Clock, LogIn, LogOut, MapPin, X } from 'lucide-react';
 import { PageHeader } from '../../components/common/PageHeader.jsx';
 import { useLoad } from '../../hooks/useLoad.js';
 import { attendanceService } from '../../services/attendanceService.js';
+import { currentEmployeeDate } from '../../services/monthScope.js';
+import { formatTime12 } from '../../../../utils/timeFormat.js';
 
 function localDateValue() {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+  return currentEmployeeDate();
 }
 
 function getLiveLocation() {
@@ -30,14 +31,14 @@ function hasTime(value) {
 }
 
 function locationText(location) {
-  if (!location?.latitude || !location?.longitude) return '-';
+  if (location?.latitude == null || location?.longitude == null) return '-';
   return location.address
     || [location.street, location.area, location.city, location.district].filter(Boolean).join(', ')
     || `${Number(location.latitude).toFixed(5)}, ${Number(location.longitude).toFixed(5)}`;
 }
 
 function LocationView({ location }) {
-  if (!location?.latitude || !location?.longitude) return <span>-</span>;
+  if (location?.latitude == null || location?.longitude == null) return <span>-</span>;
   return <a className="location-link" href={location.mapUrl || `https://www.google.com/maps?q=${location.latitude},${location.longitude}`} target="_blank" rel="noreferrer">{locationText(location)}</a>;
 }
 
@@ -53,7 +54,7 @@ function AttendanceConfirmModal({ pending, saving, onClose, onConfirm }) {
           <button className="icon-btn" type="button" onClick={onClose} title="Close"><X size={17} /></button>
         </div>
         <div className="attendance-confirm-details">
-          <div><Clock size={16} /><span>Time</span><strong>{new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}</strong></div>
+          <div><Clock size={16} /><span>Time</span><strong>{new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase()}</strong></div>
           <div><MapPin size={16} /><span>Location</span><strong>{locationText(pending.location)}</strong></div>
         </div>
         <div className="employee-modal-actions">
@@ -66,7 +67,8 @@ function AttendanceConfirmModal({ pending, saving, onClose, onConfirm }) {
 }
 
 export default function Attendance() {
-  const today = localDateValue();
+  const [today, setToday] = useState(localDateValue);
+  useEffect(() => { const timer = setInterval(() => setToday(localDateValue()), 30000); return () => clearInterval(timer); }, []);
   const month = today.slice(0, 7);
   const { data, loading, error, setData } = useLoad(() => attendanceService.monthly(month), [month]);
   const [message, setMessage] = useState('');
@@ -79,6 +81,18 @@ export default function Attendance() {
   );
   const checkedIn = hasTime(todayRecord?.checkIn);
   const checkedOut = hasTime(todayRecord?.checkOut);
+  const onBreak = checkedIn && !checkedOut && Boolean(todayRecord?.breaks?.length && !todayRecord.breaks.at(-1).end);
+
+  async function changeBreak() {
+    setSaving('Break');
+    setMessage('');
+    try {
+      const record = await attendanceService.changeBreak(onBreak ? 'end' : 'start');
+      setData((current) => ({ ...current, data: (current?.data || []).map((row) => row.date === record.date ? record : row) }));
+      setMessage(onBreak ? 'Break end saved' : 'Break start saved');
+    } catch (err) { setMessage(err.message); }
+    finally { setSaving(''); }
+  }
 
   async function openConfirm(fn, label) {
     setMessage('');
@@ -109,7 +123,7 @@ export default function Attendance() {
             : [record, ...rows],
         };
       });
-      setMessage(`${pending.label} saved at ${pending.label === 'Check In' ? record.checkIn : record.checkOut}`);
+      setMessage(`${pending.label} saved at ${formatTime12(pending.label === 'Check In' ? record.checkIn : record.checkOut)}`);
       setPending(null);
     } catch (err) {
       setMessage(err.message);
@@ -128,28 +142,32 @@ export default function Attendance() {
             <span>Today</span>
             <strong>{today}</strong>
           </div>
-          <b className={checkedOut ? 'complete' : checkedIn ? 'active' : ''}>{checkedOut ? 'Completed' : checkedIn ? 'Checked In' : 'Not Marked'}</b>
+          <b className={checkedOut ? 'complete' : checkedIn ? 'active' : ''}>{checkedOut ? 'Completed' : onBreak ? 'On Break' : checkedIn ? 'Checked In' : 'Not Marked'}</b>
         </div>
         <div className="attendance-punch-grid">
           <div>
             <span><LogIn size={15} />Check In</span>
-            <strong>{loading ? '...' : todayRecord?.checkIn || '--'}</strong>
+            <strong>{loading ? '...' : formatTime12(todayRecord?.checkIn || '--')}</strong>
             <LocationView location={todayRecord?.checkInLocation} />
           </div>
           <div>
             <span><LogOut size={15} />Check Out</span>
-            <strong>{loading ? '...' : todayRecord?.checkOut || '--'}</strong>
+            <strong>{loading ? '...' : formatTime12(todayRecord?.checkOut || '--')}</strong>
             <LocationView location={todayRecord?.checkOutLocation} />
           </div>
+          <div><span><Clock size={15} />Break Time</span><strong>{todayRecord?.breakMinutes || 0} min{onBreak ? ' + ongoing' : ''}</strong></div>
+          <div><span><Clock size={15} />Working Hours</span><strong>{todayRecord?.hours || '--'}</strong></div>
         </div>
       </section>
 
       <div className="card action-panel attendance-action-panel">
         {!loading && !checkedIn && <button className="btn primary" disabled={Boolean(saving)} onClick={() => openConfirm(attendanceService.checkIn, 'Check In')}><LogIn size={16} />{saving === 'Getting Check In' ? 'Getting location...' : 'Check In'}</button>}
         {!loading && checkedIn && !checkedOut && <button className="btn primary" disabled={Boolean(saving)} onClick={() => openConfirm(attendanceService.checkOut, 'Check Out')}><LogOut size={16} />{saving === 'Getting Check Out' ? 'Getting location...' : 'Check Out'}</button>}
+        {!loading && checkedIn && !checkedOut && <button className="btn" disabled={Boolean(saving)} onClick={changeBreak}><Clock size={16} />{saving === 'Break' ? 'Saving...' : onBreak ? 'End Break' : 'Start Break'}</button>}
         {!loading && checkedIn && checkedOut && <div className="attendance-complete-note"><CheckCircle2 size={17} />Today attendance completed. Next check in opens tomorrow.</div>}
         {loading && <div className="attendance-complete-note">Loading today attendance...</div>}
       </div>
+      {todayRecord?.breaks?.length > 0 && <section className="card"><h2>Today’s Breaks</h2><div className="employee-break-list">{todayRecord.breaks.map((row, index) => <p key={index}><span>Break {index + 1}</span><strong>{formatTime12(row.start)} – {formatTime12(row.end || 'In progress')}</strong></p>)}</div></section>}
 
       {message && <p className={message.includes('saved') ? 'card' : 'error'}>{message}</p>}
       {pending && <AttendanceConfirmModal pending={pending} saving={Boolean(saving) && !saving.startsWith('Getting')} onClose={() => setPending(null)} onConfirm={confirmAction} />}

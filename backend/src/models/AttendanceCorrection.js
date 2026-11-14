@@ -18,4 +18,5 @@ attendanceCorrectionSchema.index({ ownerUserId: 1, status: 1, date: 1 });
 attendanceCorrectionSchema.index({ ownerUserId: 1, employeeId: 1, date: 1 });
 attendanceCorrectionSchema.index({ ownerUserId: 1, createdAt: -1 });
 
+attendanceCorrectionSchema.index({ ownerUserId: 1, updatedAt: -1, _id: -1 });
 export const AttendanceCorrection = model('AttendanceCorrection', attendanceCorrectionSchema);

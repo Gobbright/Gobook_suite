@@ -63,6 +63,7 @@ if (nodeEnv === 'production' && adminAccounts.some((account) => /^(admin@123|cha
 
 export const env = {
   nodeEnv,
+  employeeLoginSkipOtp: nodeEnv === 'development' && process.env.EMPLOYEE_LOGIN_SKIP_OTP === 'true',
   port:          integer('PORT', 5000, { min: 1, max: 65535 }),
   trustProxyHops: integer('TRUST_PROXY_HOPS', 1, { min: 0, max: 10 }),
 

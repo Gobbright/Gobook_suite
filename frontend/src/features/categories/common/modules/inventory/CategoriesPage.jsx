@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
 import { useEffect, useState } from 'react';
@@ -133,7 +134,7 @@ export function CategoriesPage() {
     if (!window.confirm('Delete this category? Products already tagged with it will keep the category name as free text.')) return;
     api.invDeleteCategory(id)
       .then(() => { loadAll(); })
-      .catch((e) => alert(e.message || 'Failed to delete category'));
+      .catch((e) => notify(e.message || 'Failed to delete category'));
   }
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));

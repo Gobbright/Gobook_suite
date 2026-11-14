@@ -1,3 +1,4 @@
+import { EmployeeReportButtons } from '../../../components/common/EmployeeReportButtons.jsx';
 import { exportRows } from '../../../../../utils/exportRows.js';
 import { useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
@@ -45,6 +46,7 @@ export default function LeaveReports() {
     <div className="hr-screen">
       <div className="hr-page-head"><div><h1>Leave Reports</h1><p>Generate leave reports and analytics</p></div><button onClick={() => exportRows('Leave Report ' + month, deptRows)} className="hr-btn"><Download size={14} />Export</button></div>
       <LeaveNav current="/employee-management/leave/reports" />
+      <EmployeeReportButtons kind="leaves" month={month} department={dept} />
       {leavesLoad.error && <p className="error">{leavesLoad.error}</p>}
       <section className="hr-card">
         <div className="report-filter-grid">

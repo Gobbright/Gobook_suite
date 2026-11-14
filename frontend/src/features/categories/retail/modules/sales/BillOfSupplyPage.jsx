@@ -1,3 +1,4 @@
+import { useRequireBusinessEmail } from '../../../../../hooks/useRequireBusinessEmail.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { SalesWorkflowDialog } from './shared/SalesWorkflowDialog.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -63,6 +64,7 @@ function PaymentStatusBadge({ status }) {
 }
 
 function ShareModal({ bill, onClose }) {
+  const requireBusinessEmail = useRequireBusinessEmail();
   const [emailTo, setEmailTo] = useState(bill.customer?.email || '');
   const [sending, setSending] = useState(false);
   const [result, setResult]   = useState(null);
@@ -75,6 +77,7 @@ function ShareModal({ bill, onClose }) {
   }
 
   async function handleEmail() {
+    if (!requireBusinessEmail()) return;
     if (!emailTo.trim()) return;
     setSending(true); setResult(null);
     try {

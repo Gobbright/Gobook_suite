@@ -7,6 +7,8 @@ const schema = new Schema({
   credentialHash: { type: String, required: true, select: false },
   expiresAt: { type: Date, required: true },
   revokedAt: { type: Date, default: null },
+  lastSeenAt: { type: Date, default: Date.now },
+  portalPresence: [{ _id: false, clientId: String, seenAt: Date }],
 }, { timestamps: true });
 schema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 export const SecuritySession = model('SecuritySession', schema);

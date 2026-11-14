@@ -2,6 +2,7 @@ import { redirectTo } from '../routes/navigation.js';
 import { expireSession, getToken } from './authToken.js';
 import { API_BASE_URL } from './apiBase.js';
 import { humanVerificationHeaders } from './humanVerification.js';
+import { notifyBusinessEmailChanged } from './businessEmail.js';
 
 const DEVICE_ID_KEY = 'gobook.device.id';
 
@@ -52,5 +53,6 @@ export async function apiClient(path, options = {}) {
     throw new Error(data.message || `API request failed: ${response.status}`);
   }
 
+  if (options.method && options.method !== 'GET' && ['/settings', '/more-modules/email-settings'].includes(path.split('?')[0])) notifyBusinessEmailChanged();
   return data;
 }

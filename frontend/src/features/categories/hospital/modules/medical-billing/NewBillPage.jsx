@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { DocumentQuickActions } from '../../../../../components/forms/DocumentQuickActions.jsx';
 import { DocumentSummaryCard } from '../../../../../components/forms/DocumentSummaryCard.jsx';
 import { useEffect, useMemo, useState } from 'react';
@@ -370,7 +371,7 @@ export function NewBillPage() {
   async function save(status) {
     if (!selectedPatient) return;
     if (Number(billDiscount || 0) > 1000 && !auth.trim()) {
-      window.alert('Authorization is required for large discounts.');
+      notify('Authorization is required for large discounts.');
       return;
     }
     await bills.create({

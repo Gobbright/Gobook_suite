@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { AutomobileGstr1Page } from '../../../automobile/AutomobileGstr1Page.jsx';
 import { useEffect, useState } from 'react';
 
@@ -84,7 +85,6 @@ function DefaultGstr1Page() {
   const [saving, setSaving]     = useState(false);
   const [filing2, setFiling2]   = useState(false);
   const [populating, setPopulating] = useState(false);
-  const [toast, setToast]       = useState(null);
 
   // Add-row state
   const [addingB2b, setAddingB2b]   = useState(false);
@@ -93,8 +93,7 @@ function DefaultGstr1Page() {
   const [newB2cs, setNewB2cs]       = useState(EMPTY_B2CS);
 
   function showToast(msg, ok = true) {
-    setToast({ msg, ok });
-    setTimeout(() => setToast(null), 3500);
+    notify(msg, { tone: ok ? 'success' : 'error' });
   }
 
   useEffect(() => {
@@ -203,13 +202,6 @@ function DefaultGstr1Page() {
 
   return (
     <div className="p-4 md:p-7">
-
-      {/* Toast */}
-      {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${toast.ok ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>
-          {toast.msg}
-        </div>
-      )}
 
       {/* ── Header ── */}
       <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6">

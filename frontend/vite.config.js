@@ -20,7 +20,20 @@ export default defineConfig(({ command, mode }) => {
     throw new Error('Production build requires a valid VITE_GOOGLE_CLIENT_ID')
   }
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      {
+        name: 'isolate-middleware-cache',
+        config(config) {
+          // Rendering tests create middleware servers in parallel with Vite dev.
+          // Their dependency optimizer must not replace the browser's cache.
+          if (config.server?.middlewareMode && !config.cacheDir) {
+            return { cacheDir: `node_modules/.vite-ssr/${process.pid}` }
+          }
+        },
+      },
+      react(),
+      tailwindcss(),
+    ],
     server: { proxy: metaProxy },
     preview: { proxy: metaProxy },
   }

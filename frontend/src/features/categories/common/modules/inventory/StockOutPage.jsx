@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
 import { useAutomobileListingLayout } from '../../../../../hooks/useAutomobileListingLayout.js';
@@ -233,7 +234,7 @@ function DefaultStockOutPage() {
     if (!window.confirm('Delete this stock-out record?')) return;
     api.invDeleteStockOut(id)
       .then(() => { setRecords((prev) => prev.filter((r) => r._id !== id)); loadStats(); })
-      .catch((err) => alert(err.message || 'Failed to delete record'));
+      .catch((err) => notify(err.message || 'Failed to delete record'));
   }
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));

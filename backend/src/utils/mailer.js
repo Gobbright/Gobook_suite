@@ -57,7 +57,11 @@ export function buildBrandedEmail({
   notice,
   footerText = 'This message was sent securely by GoBooks.',
   badge = 'Trusted business suite',
+  branding,
 }) {
+  const logoHtml = branding
+    ? branding.logoCid ? `<img src="cid:${escapeHtml(branding.logoCid)}" width="148" alt="${escapeHtml(branding.name)}" style="display:block;max-width:148px;height:auto;border:0;">` : `<strong style="font-size:22px;color:#17345c;">${escapeHtml(branding.name)}</strong>`
+    : `<img src="cid:${GOBOOK_LOGO_CID}" width="148" alt="GoBooks" style="display:block;width:148px;max-width:148px;height:auto;border:0;">`;
   const safeTitle = plainLine(title || 'GoBooks');
   const safePreheader = plainLine(preheader || title || 'GoBooks notification');
   const greetingHtml = greeting
@@ -96,7 +100,7 @@ export function buildBrandedEmail({
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td align="left" style="vertical-align:middle;">
-                    <img src="cid:${GOBOOK_LOGO_CID}" width="148" alt="GoBooks" style="display:block;width:148px;max-width:148px;height:auto;border:0;">
+                    ${logoHtml}
                   </td>
                   <td align="right" style="vertical-align:middle;">
                     <span style="display:inline-block;padding:7px 10px;border-radius:999px;background:#dcfce7;color:#166534;font-size:12px;font-weight:700;">${safeBadge}</span>
@@ -123,7 +127,7 @@ export function buildBrandedEmail({
           </tr>
           <tr>
             <td align="center" style="padding:18px 12px 0;color:#94a3b8;font-size:12px;line-height:1.5;">
-              GoBooks helps teams manage billing, accounting, CRM, inventory, payroll and GST in one place.
+              ${branding ? escapeHtml(branding.name) : 'GoBooks helps teams manage billing, accounting, CRM, inventory, payroll and GST in one place.'}
             </td>
           </tr>
         </table>
@@ -199,5 +203,5 @@ export async function sendMail({ to, subject, html, attachments = [], smtp }) {
     : createTransporter();
   const from = smtp?.from || process.env.SMTP_FROM
     || `GoBooks Support <${process.env.SMTP_USER || 'support.gobook@gmail.com'}>`;
-  await transporter.sendMail({ from, to, subject, html, attachments: mergeLogoAttachment(html, attachments) });
+  return transporter.sendMail({ from, to, subject, html, attachments: mergeLogoAttachment(html, attachments) });
 }

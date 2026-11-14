@@ -1,3 +1,4 @@
+import { notify } from '../../../services/notifications.js';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Activity, Clock3, Send, Stethoscope } from 'lucide-react';
@@ -112,11 +113,11 @@ export function TriagePage() {
   async function saveTriage({ sendToQueue = false } = {}) {
     if (!selected) return;
     if (!form.chiefComplaint.trim()) {
-      window.alert('Chief complaint is required.');
+      notify('Chief complaint is required.');
       return;
     }
     if (!form.triageNurse.trim()) {
-      window.alert('Triage nurse is required.');
+      notify('Triage nurse is required.');
       return;
     }
 

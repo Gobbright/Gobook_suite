@@ -1,3 +1,4 @@
+import { notify } from '../../../../../../services/notifications.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Download, Printer, Send, Wallet, Trash2, IndianRupee } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
@@ -280,7 +281,7 @@ export function InvoiceViewPage({ invoiceId, documentType = 'invoice' }) {
       await api.deletePayment(paymentId);
       await loadPayments();
     } catch (err) {
-      alert(err.message || 'Failed to delete payment');
+      notify(err.message || 'Failed to delete payment');
     } finally {
       setDeletingId(null);
     }

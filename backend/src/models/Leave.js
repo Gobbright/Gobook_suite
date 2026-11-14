@@ -30,4 +30,5 @@ leaveSchema.index({ userId: 1, status: 1 });
 leaveSchema.index({ userId: 1, empId: 1 });
 leaveSchema.index({ userId: 1, createdAt: -1 });
 
+leaveSchema.index({ userId: 1, updatedAt: -1, _id: -1 });
 export const Leave = model('Leave', leaveSchema);

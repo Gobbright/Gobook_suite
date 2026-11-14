@@ -1,0 +1,4 @@
+export const STATUTORY_FIELDS = [['pfNumber', 'PF Number'], ['uan', 'UAN'], ['esiNumber', 'ESI Number'], ['pan', 'PAN']];
+export const BANK_FIELDS = [['accountName', 'Account Holder'], ['bankName', 'Bank Name'], ['accountNumber', 'Account Number'], ['ifsc', 'IFSC'], ['branch', 'Bank Branch']];
+export const SALARY_FIELDS = [['hra', 'HRA'], ['specialAllowance', 'Special Allowance'], ['conveyanceAllowance', 'Conveyance Allowance'], ['medicalAllowance', 'Medical Allowance'], ['otherAllowances', 'Other Allowances'], ['pf', 'PF Deduction'], ['esi', 'ESI Deduction'], ['professionalTax', 'Professional Tax'], ['tds', 'TDS'], ['otherDeduction', 'Other Deduction'], ['loanDeduction', 'Loan Deduction']];
+export const emptyFamilyMember = () => ({ name: '', relationship: '', phone: '', dateOfBirth: '', occupation: '', isEmergencyContact: false });

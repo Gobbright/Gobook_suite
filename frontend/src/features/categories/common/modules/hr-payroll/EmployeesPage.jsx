@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -5,6 +6,8 @@ import { ExportButtons } from '../../../../../components/forms/ExportButtons.jsx
 import { SelectDropdown } from '../../../../../components/forms/SelectDropdown.jsx';
 import { AutocompleteInput } from '../../../../../components/forms/AutocompleteInput.jsx';
 import { api } from '../../../../../services/api.js';
+import { Link, useNavigate } from 'react-router-dom';
+import { useBusinessEmail } from '../../../../../app/BusinessEmailContext.jsx';
 
 const AVATAR_COLORS = ['#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#e11d48', '#65a30d'];
 const TH = 'text-left text-xs font-semibold uppercase tracking-wide text-[#536173] px-5 py-3 border-b border-[#edf2f7]';
@@ -49,6 +52,7 @@ function EmployeeModal({ initial, depts, onClose, onSaved }) {
           <button className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-[#536173] bg-transparent border-0 cursor-pointer text-lg" onClick={onClose} type="button">×</button>
         </div>
         <form onSubmit={handleSubmit}>
+          <p className="px-6 pt-4 text-[13px]"><Link className="text-blue-600 font-semibold" to={isEdit ? `/employee-management/employees/add?edit=${initial._id}` : '/employee-management/employees/add'}>Open full employee form: family, PF/ESI, bank details &amp; login</Link></p>
           <div className="px-6 py-5 grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto">
             <div className="sm:col-span-2">
               <label className={IL}>Full Name *</label>
@@ -101,6 +105,8 @@ function EmployeeModal({ initial, depts, onClose, onSaved }) {
 }
 
 export function EmployeesPage() {
+  const { configured: emailVerified } = useBusinessEmail();
+  const navigate = useNavigate();
   const [search, setSearch]     = useState('');
   const [dept, setDept]         = useState('All Departments');
   const [status, setStatus]     = useState('All Status');
@@ -114,6 +120,7 @@ export function EmployeesPage() {
   const [importResult, setImportResult] = useState(null);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef(null);
+  const addEmployee = () => emailVerified ? setModal('add') : navigate('/email-setup');
 
   const LIMIT = 5;
 
@@ -155,7 +162,7 @@ export function EmployeesPage() {
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this employee? This cannot be undone.')) return;
     try { await api.hrDeleteEmployee(id); fetchEmployees(); fetchStats(); fetchDepts(); }
-    catch (err) { alert(err.message); }
+    catch (err) { notify(err.message); }
   };
 
   const handleSaved = () => { setModal(null); fetchEmployees(); fetchStats(); fetchDepts(); };
@@ -211,11 +218,11 @@ export function EmployeesPage() {
         </div>
         <div className="flex items-center gap-2">
           <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImportFile} />
-          <button type="button" disabled={importing} onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-[#374151] bg-white border border-[#dbe4ef] rounded-md cursor-pointer hover:bg-gray-50 font-[inherit] disabled:opacity-60">
+          <button type="button" disabled={importing} onClick={() => emailVerified ? fileInputRef.current?.click() : navigate('/email-setup')} className="inline-flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-[#374151] bg-white border border-[#dbe4ef] rounded-md cursor-pointer hover:bg-gray-50 font-[inherit] disabled:opacity-60">
             <svg fill="none" height="14" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" width="14"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
             {importing ? 'Importing...' : 'Import Excel'}
           </button>
-          <button onClick={() => setModal('add')} className="inline-flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium text-white bg-blue-600 rounded-md cursor-pointer hover:bg-blue-700 border-0 font-[inherit]" type="button">
+          <button onClick={addEmployee} className="inline-flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium text-white bg-blue-600 rounded-md cursor-pointer hover:bg-blue-700 border-0 font-[inherit]" type="button">
             <svg fill="none" height="14" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24" width="14"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
             Add Employee
           </button>
@@ -279,7 +286,7 @@ export function EmployeesPage() {
               ) : employees.length === 0 ? (
                 <tr><td colSpan={8} className="px-5 py-10 text-center text-[13px] text-[#536173]">
                   No employees found.{' '}
-                  <button className="text-blue-600 underline bg-transparent border-0 cursor-pointer font-[inherit] text-[13px]" onClick={() => setModal('add')} type="button">Add one now</button>
+                  <button className="text-blue-600 underline bg-transparent border-0 cursor-pointer font-[inherit] text-[13px]" onClick={addEmployee} type="button">Add one now</button>
                 </td></tr>
               ) : employees.map((row, i) => (
                 <BulkDeleteRow record={row} key={row._id} className="hover:bg-gray-50">

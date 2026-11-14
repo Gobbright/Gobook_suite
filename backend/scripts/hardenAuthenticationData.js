@@ -4,6 +4,7 @@ import { Employee } from '../src/models/Employee.js';
 import { EmployeeLogin } from '../src/models/EmployeeLogin.js';
 import { AppSession } from '../src/models/AppSession.js';
 import { SecuritySession } from '../src/models/SecuritySession.js';
+import { PendingEmployeeLogin } from '../src/models/PendingEmployeeLogin.js';
 import { SecurityRateLimit } from '../src/middleware/securityRateLimit.js';
 
 // Read-only unless --apply is supplied. Never print credential values.
@@ -18,7 +19,7 @@ try {
   console.log(JSON.stringify({ database: mongoose.connection.name, apply: process.argv.includes('--apply'), ...counts }));
   if (process.argv.includes('--apply')) {
     if (counts.loginsWithoutPasswordHash) throw new Error('Reset passwords for enabled logins without password hashes before applying this migration.');
-    await Promise.all([SecuritySession.createIndexes(), SecurityRateLimit.createIndexes()]);
+    await Promise.all([SecuritySession.createIndexes(), SecurityRateLimit.createIndexes(), PendingEmployeeLogin.createIndexes()]);
     const employees = await Employee.updateMany(filter, { $unset: { loginPassword: 1 } });
     const logins = await EmployeeLogin.updateMany(filter, { $unset: { loginPassword: 1 } });
     const sessions = await AppSession.updateMany(

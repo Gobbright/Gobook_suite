@@ -27,7 +27,7 @@ export default function EmployeeGroupsPage({ kind }) {
       <section className="hr-stat-card"><span className="hr-stat-icon green"><Users size={22} /></span><div><span>Total Employees</span><strong>{employees.length}</strong><small>In this account</small></div></section>
     </div>
     <section className="hr-card"><div className="hr-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${title.toLowerCase()}...`} /></div>
-      <div className="hr-groups-grid">{loading ? <p>Loading {title.toLowerCase()}...</p> : visible.length ? visible.map(([name, count]) => <Link key={name} to={`/employee-management/employees?${isDepartment ? 'department' : 'designation'}=${encodeURIComponent(name)}`}><span className="hr-stat-icon blue">{isDepartment ? <BriefcaseBusiness size={20} /> : <Users size={20} />}</span><span><strong>{name}</strong><small>{count} employee{count === 1 ? '' : 's'}</small></span><span aria-hidden="true">›</span></Link>) : <p>No {title.toLowerCase()} found.</p>}</div>
+      <div className="hr-groups-grid">{loading ? <p>Loading {title.toLowerCase()}...</p> : visible.length ? visible.map(([name, count]) => <Link key={name} to={`/employee-management/employees?${isDepartment ? 'department' : 'designation'}=${encodeURIComponent(name === 'Unassigned' ? '__unassigned__' : name)}`}><span className="hr-stat-icon blue">{isDepartment ? <BriefcaseBusiness size={20} /> : <Users size={20} />}</span><span><strong>{name}</strong><small>{count} employee{count === 1 ? '' : 's'}</small></span><span aria-hidden="true">›</span></Link>) : <p>No {title.toLowerCase()} found.</p>}</div>
     </section>
   </div>;
 }

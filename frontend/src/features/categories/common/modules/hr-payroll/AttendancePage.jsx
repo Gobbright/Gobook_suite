@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -146,7 +147,7 @@ export function AttendancePage() {
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this attendance record?')) return;
     try { await api.hrDeleteAttendance(id); fetchRecords(); fetchStats(); }
-    catch (err) { alert(err.message); }
+    catch (err) { notify(err.message); }
   };
 
   const handleSaved = () => { setModal(null); fetchRecords(); fetchStats(); };

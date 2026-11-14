@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { useMemo, useState } from 'react';
 import { ArrowRightLeft, CheckCircle2, Search, ShieldCheck, X } from 'lucide-react';
 
@@ -148,15 +149,15 @@ export function RefundsPage() {
   async function processRefund() {
     if (!selectedInvoice) return;
     if (!reason.trim()) {
-      window.alert('Refund reason is required.');
+      notify('Refund reason is required.');
       return;
     }
     if (!approvedBy.trim()) {
-      window.alert('Manager/Admin approval is required.');
+      notify('Manager/Admin approval is required.');
       return;
     }
     if (refundAmountValue <= 0 || refundAmountValue > available) {
-      window.alert('Refund amount must be within available paid amount.');
+      notify('Refund amount must be within available paid amount.');
       return;
     }
 

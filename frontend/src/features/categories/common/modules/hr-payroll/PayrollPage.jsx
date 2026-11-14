@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -268,7 +269,7 @@ export function PayrollPage() {
       await api.hrPatchPayrollStatus(row._id, newStatus);
       refreshPayroll();
     } catch (err) {
-      alert(err.message);
+      notify(err.message);
     }
   };
 
@@ -278,7 +279,7 @@ export function PayrollPage() {
       await api.hrDeletePayroll(id);
       refreshPayroll();
     } catch (err) {
-      alert(err.message);
+      notify(err.message);
     }
   };
 
@@ -349,7 +350,7 @@ export function PayrollPage() {
       await Promise.all(pendingRows.map((row) => api.hrPatchPayrollStatus(row._id, 'Paid')));
       refreshPayroll();
     } catch (err) {
-      alert(err.message);
+      notify(err.message);
     } finally {
       setActionBusy('');
     }

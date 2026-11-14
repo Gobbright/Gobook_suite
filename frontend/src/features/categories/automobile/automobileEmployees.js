@@ -7,7 +7,7 @@ export function employeeDirectoryStats(rows, now = new Date()) {
 }
 export function filterEmployeeDirectory(rows, filters) {
   const query = (filters.search || '').trim().toLowerCase();
-  return rows.filter((row) => [row.name, row.employeeId, row.phone, row.email].join(' ').toLowerCase().includes(query) && (!filters.dept || row.dept === filters.dept) && (!filters.designation || row.designation === filters.designation) && (!filters.branch || row.branch === filters.branch) && (!filters.status || (row.status || 'Active') === filters.status));
+  return rows.filter((row) => [row.name, row.employeeId, row.phone, row.email].join(' ').toLowerCase().includes(query) && (!filters.dept || (filters.dept === '__unassigned__' ? !row.dept?.trim() : row.dept === filters.dept)) && (!filters.designation || (filters.designation === '__unassigned__' ? !row.designation?.trim() : row.designation === filters.designation)) && (!filters.branch || row.branch === filters.branch) && (!filters.status || (row.status || 'Active') === filters.status));
 }
 export function employeeSalary(employee) {
   const structure = employee.salaryStructure || {};

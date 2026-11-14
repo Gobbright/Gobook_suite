@@ -9,6 +9,11 @@ import { Topbar } from '../components/layout/Topbar.jsx';
 import { KeyboardModeProvider } from './KeyboardModeContext.jsx';
 import { useGlobalShortcuts } from '../hooks/useGlobalShortcuts.js';
 import { useCurrentUser } from '../hooks/useCurrentUser.js';
+import { useEdgeSidebar } from '../hooks/useEdgeSidebar.js';
+import { BusinessEmailProvider } from './BusinessEmailContext.jsx';
+import { NavigationCountsProvider } from './NavigationCountsContext.jsx';
+import { BusinessEmailGate, BusinessEmailNotice } from '../components/layout/BusinessEmailNotice.jsx';
+import './businessEmail.css';
 
 const SHORTCUT_HINTS = [
   ['Alt+Q', 'Search'],
@@ -37,36 +42,41 @@ function ShortcutBar() {
 
 function AppShellInner({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { close: closeSidebar, toggle: toggleSidebar } = useEdgeSidebar(setSidebarOpen);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const currentUser = useCurrentUser();
   const category = currentUser?.category || 'other';
   const { pathname } = useLocation();
   const ledgerWorkspace = pathname === '/ledger/new' || pathname === '/trial-balance' || pathname === '/pnl' || pathname === '/balance-sheet' || pathname === '/cash-book' || pathname === '/bank-book' || /^\/journal-entry\/(new|[^/]+\/edit)$/.test(pathname);
-  useEffect(() => { setSidebarOpen(false); }, [pathname]);
+  useEffect(() => { closeSidebar(); }, [pathname, closeSidebar]);
 
   useGlobalShortcuts({ onOpenPalette: () => setPaletteOpen(true) });
 
   return (
     <div className="app-shell flex h-dvh min-h-screen overflow-hidden" data-app-category={category}>
-      {(!ledgerWorkspace || sidebarOpen) && <Sidebar mobileOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />}
+      {(!ledgerWorkspace || sidebarOpen) && <Sidebar mobileOpen={sidebarOpen} onClose={closeSidebar} />}
       <main className="app-main flex-1 min-w-0 flex flex-col overflow-hidden">
-        <Topbar sidebarOpen={sidebarOpen} onMenuClick={() => setSidebarOpen((open) => !open)} onOpenSearch={() => setPaletteOpen(true)} />
+        <Topbar sidebarOpen={sidebarOpen} onMenuClick={toggleSidebar} onOpenSearch={() => setPaletteOpen(true)} />
         <div className="app-content flex-1 overflow-y-auto overflow-x-hidden">
-          {children}
+          <BusinessEmailGate>{children}</BusinessEmailGate>
         </div>
       </main>
       {!ledgerWorkspace && <AiAssistantWidget />}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       {!ledgerWorkspace && <MobileBottomNav />}
       {!ledgerWorkspace && <ShortcutBar />}
+      <BusinessEmailNotice />
     </div>
   );
 }
 
 export function AppShell({ children }) {
+  const user = useCurrentUser();
   return (
     <KeyboardModeProvider>
-      <AppShellInner>{children}</AppShellInner>
+      <BusinessEmailProvider key={user?.id || user?._id || ''}>
+        <NavigationCountsProvider><AppShellInner>{children}</AppShellInner></NavigationCountsProvider>
+      </BusinessEmailProvider>
     </KeyboardModeProvider>
   );
 }

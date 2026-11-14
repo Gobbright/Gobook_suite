@@ -1,6 +1,8 @@
 import { redirectTo } from '../routes/navigation.js';
 import { expireSession, getToken } from './authToken.js';
 import { API_BASE_URL, SERVER_ORIGIN } from './apiBase.js';
+import { notifyBusinessEmailChanged } from './businessEmail.js';
+import { mutationNotification } from './notifications.js';
 
 const BASE = API_BASE_URL;
 
@@ -27,11 +29,15 @@ async function request(method, path, body) {
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new Error('The service is temporarily unavailable. Please wait a moment and try again.');
+    const error = new Error('The service is temporarily unavailable. Please wait a moment and try again.');
+    mutationNotification(path, method, null, error);
+    throw error;
   }
   handleUnauthorized(res);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || `Request failed (${res.status})`);
+  if (!res.ok) { const error = new Error(data.message || `Request failed (${res.status})`); mutationNotification(path, method, null, error); throw error; }
+  mutationNotification(path, method, data);
+  if (method !== 'GET' && ['/settings', '/more-modules/email-settings'].includes(path.split('?')[0])) notifyBusinessEmailChanged();
   if (method !== 'GET' && /^\/(inventory|sales|online-store)\//.test(path) && !path.startsWith('/inventory/alerts') && typeof window !== 'undefined') window.dispatchEvent(new Event('gobook:stock-changed'));
   return data;
 }
@@ -41,11 +47,14 @@ async function upload(path, formData) {
   try {
     res = await fetch(`${BASE}${path}`, { method: 'POST', headers: authHeader(), body: formData });
   } catch {
-    throw new Error('The service is temporarily unavailable. Please wait a moment and try again.');
+    const error = new Error('The service is temporarily unavailable. Please wait a moment and try again.');
+    mutationNotification(path, 'POST', null, error);
+    throw error;
   }
   handleUnauthorized(res);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || `Upload failed (${res.status})`);
+  if (!res.ok) { const error = new Error(data.message || `Upload failed (${res.status})`); mutationNotification(path, 'POST', null, error); throw error; }
+  mutationNotification(path, 'POST', data);
   if (path.startsWith('/inventory/') && typeof window !== 'undefined') window.dispatchEvent(new Event('gobook:stock-changed'));
   return data;
 }

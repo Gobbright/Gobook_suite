@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { useRequireBusinessEmail } from '../../../../../hooks/useRequireBusinessEmail.js';
+import { useBusinessEmail } from '../../../../../app/BusinessEmailContext.jsx';
+import { Link } from 'react-router-dom';
 
 import { apiClient } from '../../../../../services/apiClient.js';
 import { API_BASE_URL, SERVER_ORIGIN } from '../../../../../services/apiBase.js';
@@ -79,6 +82,8 @@ function SectionHeader({ title, editing, onEdit, onSave, onCancel }) {
 }
 
 export function BusinessSettingsPage() {
+  const requireBusinessEmail = useRequireBusinessEmail();
+  const { configured: emailVerified } = useBusinessEmail();
   const [settings, setSettings] = useState(EMPTY);
   const [draft, setDraft] = useState(null);
   const [editingSection, setEditingSection] = useState(null);
@@ -115,6 +120,7 @@ export function BusinessSettingsPage() {
   }
 
   async function sendTestEmail() {
+    if (!requireBusinessEmail()) return;
     if (!window.confirm("This will immediately email every patient with an appointment today. Continue?")) return;
     setTestingEmail(true);
     setTestEmailStatus(null);
@@ -644,13 +650,14 @@ export function BusinessSettingsPage() {
                 { label: 'SMTP Host',     value: settings.emailSmtpHost || '—' },
                 { label: 'SMTP Port',     value: settings.emailSmtpHost ? (settings.emailSmtpPort || 587) : '—' },
                 { label: 'Email Address', value: settings.emailSmtpUser || '—' },
-                { label: 'Status',        value: settings.emailSmtpHost && settings.emailSmtpUser ? '✓ Configured' : 'Not configured' },
+                { label: 'Status',        value: emailVerified ? 'App password verified' : 'App password verification required' },
               ].map(({ label, value }) => (
                 <div key={label} className="flex flex-col sm:flex-row gap-0.5 sm:gap-3">
                   <dt className="text-[13px] text-[#536173] sm:w-44 sm:flex-none">{label}</dt>
                   <dd className={`text-[13px] font-medium m-0 ${String(value).startsWith('✓') ? 'text-green-600' : 'text-[#111827]'}`}>{value}</dd>
                 </div>
               ))}
+              {!emailVerified && <Link to="/email-setup" className="text-[13px] text-blue-600 underline">Verify Google app password</Link>}
               {settings.emailSmtpHost && settings.emailSmtpUser && (
                 <div className="sm:col-span-2 flex flex-col gap-1.5 mt-1">
                   <button type="button" className="self-start px-4 py-2 bg-white text-[#536173] text-[13px] font-medium rounded-md cursor-pointer hover:bg-gray-50 border border-[#dbe4ef] font-[inherit]" disabled={testingEmail} onClick={sendTestEmail}>{testingEmail ? 'Sending…' : 'Send Reminders Now'}</button>

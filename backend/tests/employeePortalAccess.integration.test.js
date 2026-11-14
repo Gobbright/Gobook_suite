@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import mongoose from 'mongoose';
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import nodemailer from 'nodemailer';
 import { apiRouter } from '../src/routes/index.js';
 import { errorHandler } from '../src/middleware/errorHandler.js';
 import { AppUser } from '../src/models/AppUser.js';
@@ -16,6 +17,7 @@ import { createLoginSession } from '../src/services/appSessions.js';
 import { signToken } from '../src/modules/auth/authController.js';
 import { employeeAccessView } from '../src/services/employeeAccess.js';
 import { storeBuffer } from '../src/services/gridfsStorage.js';
+import fs from 'node:fs/promises';
 
 const uri = process.env.SECURITY_TEST_MONGODB_URI;
 const options = { skip: !uri };
@@ -23,6 +25,18 @@ const dbName = `gobook_employee_access_test_${process.pid}_${Date.now()}`;
 const nativeFetch = globalThis.fetch;
 let server, base, owner, employee, otherEmployee, ownerToken, employeeToken, link;
 let password = 'EmployeeOnly@123';
+let lastOtp = '';
+function mockEmail() {
+  mock.method(nodemailer, 'createTransport', () => ({ verify: async () => true, sendMail: async (mail) => { lastOtp = mail.html.match(/>([0-9]{6})</)?.[1] || ''; } }));
+}
+async function completeLogin(body) {
+  mockEmail();
+  const started = await call('/employee/auth/login', { method: 'POST', body });
+  if (started.status !== 202) return started;
+  assert.equal(started.data.token, undefined);
+  assert.match(lastOtp, /^\d{6}$/);
+  return call('/employee/auth/verify-otp', { method: 'POST', body: { challengeId: started.data.challengeId, otp: lastOtp } });
+}
 async function call(path, { token, body, method = 'GET', form } = {}) {
   const response = await nativeFetch(base + path, { method, headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(!form && body ? { 'Content-Type': 'application/json' } : {}) }, ...(form ? { body: form } : body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(15000) });
   const type = response.headers.get('content-type') || '';
@@ -71,16 +85,22 @@ test('main owner sets the password; employee ID is prefilled from a verified bus
   assert.equal(context.data.employeeId, 'EMP-001');
   assert.equal(context.data.loginEnabled, false);
   assert.equal((await call('/employee/auth/login', { method: 'POST', body: values })).status, 401);
+  assert.equal((await call(`/admin/employees/${employee._id}/access`, { method: 'PUT', token: ownerToken, body: { loginEnabled: true, password } })).status, 403);
+  mockEmail();
+  const sender = await call('/admin/employee-email-settings', { method: 'PUT', token: ownerToken, body: { email: 'owner-fixture@gmail.com', appPassword: 'abcdefghijklmnop' } });
+  assert.equal(sender.status, 200);
+  assert.equal(sender.data.configured, true);
+  assert.equal(sender.data.appPassword, undefined);
   const saved = await call(`/admin/employees/${employee._id}/access`, { method: 'PUT', token: ownerToken, body: { loginEnabled: true, password } });
   assert.equal(saved.status, 200);
   assert.equal(saved.data.passwordConfigured, true);
   assert.equal(saved.data.password, undefined);
   assert.equal(saved.data.passwordHash, undefined);
-  const login = await call('/employee/auth/login', { method: 'POST', body: values });
+  const login = await completeLogin({ username: owner.email, employeeId: employee.employeeId, password });
   assert.equal(login.status, 200);
   employeeToken = login.data.token;
   assert.equal(login.data.user.employeeId, 'EMP-001');
-  assert.ok(login.data.user.loginPath.includes('anbu-retail-store'));
+  assert.equal(login.data.user.loginPath, '/employee-login');
   assert.match(login.data.user.portalBasePath, /^\/employee\/anbu-retail-store-[a-f0-9]{8}\/EMP-001$/);
   const stored = await EmployeeLogin.findOne({ employeeObjectId: employee._id }).select('+passwordHash +loginPassword').lean();
   assert.equal(await bcrypt.compare(password, stored.passwordHash), true);
@@ -93,11 +113,64 @@ test('employee profile is private/read-only and management endpoints require the
   assert.equal((await call(`/admin/employees/${employee._id}`, { method: 'PUT', token: employeeToken, body: { name: 'Unauthorized change' } })).status, 403);
   assert.equal((await call('/hr-payroll/employees', { token: employeeToken })).status, 401);
   assert.equal((await call('/employee/me')).status, 401);
+  assert.equal((await call('/admin/employee-email-settings', { token: employeeToken })).status, 403);
+  assert.equal((await call('/admin/employee-email-settings')).status, 401);
   assert.equal((await Employee.findById(employee._id)).name, 'Employee One');
   const member = await AppUser.create({ name: 'Restricted sub-user', email: 'member@example.test', businessId: owner.businessId, parentUserId: owner._id, role: 'Accountant', accountType: 'member', status: 'Active', permissions: { modules: ['employee-management'] }, subscriptionStatus: 'active', subscriptionExpiresAt: new Date(Date.now() + 86400000) });
   const session = await createLoginSession(member, { headers: { 'user-agent': 'Restricted member test' }, ip: '127.0.0.1' });
   const token = signToken(member, session.sessionId);
   assert.equal((await call('/hr-payroll/employees', { token, method: 'POST', body: { name: 'Forbidden create' } })).status, 403);
+  assert.equal((await call('/admin/employee-email-settings', { token, method: 'PUT', body: { email: 'member@gmail.com', appPassword: 'abcdefghijklmnop' } })).status, 403);
+});
+
+test('personal QR details persist in MongoDB, stay tenant-scoped and filter the scan page', options, async () => {
+  await Employee.updateOne({ _id: employee._id }, { $set: { name: 'QR Test Employee', designation: 'Sales Executive', address: '12 Test Street, Chennai', phone: '9000012345' } });
+  const image = await storeBuffer({ buffer: Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'), filename: 'employee-fixture.png', contentType: 'image/png', metadata: { kind: 'employee-photo', userId: owner._id } });
+  await Employee.updateOne({ _id: employee._id }, { $set: { 'photo.gridFsFileId': image.id } });
+  const fields = { photo: true, name: true, employeeId: true, role: true, address: true, phone: true, email: false };
+  const path = `/admin/employees/${employee._id}/qr-display`;
+  assert.equal((await call(path, { method: 'PUT', token: employeeToken, body: { fields } })).status, 403);
+  assert.equal((await call(path, { method: 'PUT', token: ownerToken, body: { fields: { password: true } } })).status, 400);
+  const saved = await call(path, { method: 'PUT', token: ownerToken, body: { fields } });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.data.businessUsername, owner.email);
+  assert.deepEqual((await Employee.findById(employee._id).lean()).qrDisplayFields, fields);
+  const params = new URLSearchParams({ businessSlug: saved.data.businessSlug, employeeId: employee.employeeId });
+  const publicContext = await call('/employee/auth/link-context?' + params);
+  assert.equal(publicContext.data.qrProfile.name, 'QR Test Employee');
+  assert.equal(publicContext.data.qrProfile.role, 'Sales Executive');
+  assert.equal(publicContext.data.qrProfile.address, '12 Test Street, Chennai');
+  assert.equal(publicContext.data.qrProfile.phone, '9000012345');
+  assert.equal(publicContext.data.qrProfile.email, undefined);
+  assert.equal((await call('/employee/auth/link-photo?' + params)).status, 200);
+  const hidden = { ...fields, photo: false, phone: false, address: false };
+  await call(path, { method: 'PUT', token: ownerToken, body: { fields: hidden } });
+  const filtered = await call('/employee/auth/link-context?' + params);
+  for (const field of ['photoUrl', 'phone', 'address', 'email', 'password', 'passwordHash']) assert.equal(filtered.data.qrProfile[field], undefined);
+  assert.equal((await call('/employee/auth/link-photo?' + params)).status, 404);
+  assert.equal((await call(`/admin/employees/${otherEmployee._id}/qr-display`, { method: 'PUT', token: ownerToken, body: { fields } })).status, 200);
+  const foreign = await Employee.create({ userId: new mongoose.Types.ObjectId(), employeeId: 'EMP-FOREIGN', name: 'Other tenant', category: 'retail' });
+  assert.equal((await call(`/admin/employees/${foreign._id}/qr-display`, { method: 'PUT', token: ownerToken, body: { fields } })).status, 404);
+  await fs.mkdir(new URL('../runtime/', import.meta.url), { recursive: true });
+  await fs.writeFile(new URL('../runtime/employee-qr-test-report.json', import.meta.url), JSON.stringify({ environment: 'isolated test database; removed after the tests', ownerUsername: owner.email, employeeId: employee.employeeId, sampleUrl: `https://gobooksuite.com${saved.data.loginPath}`, name: 'QR Test Employee', checks: ['personal URL', 'prefilled business username and employee ID', 'saved QR field selections', 'public profile filtering', 'photo hiding', 'tenant isolation', 'OTP verified email persisted'] }, null, 2));
+  await Employee.updateOne({ _id: employee._id }, { $set: { name: 'Employee One' } });
+});
+
+test('creating an employee generates the personal URL immediately and ignores forged email verification', options, async () => {
+  const created = await call('/admin/employees', { method: 'POST', token: ownerToken, body: { employeeId: 'EMP-CREATED', name: 'Created Employee', email: 'created@example.test', qrDisplayFields: { phone: false, address: false }, emailVerifiedAt: new Date(), emailVerifiedAddress: 'created@example.test' } });
+  assert.equal(created.status, 201, created.data.message);
+  assert.equal(created.data.portalAccess.businessUsername, owner.email);
+  assert.ok(created.data.portalAccess.loginPath.endsWith('/EMP-CREATED'));
+  const stored = await Employee.findById(created.data._id).lean();
+  assert.equal(stored.portalAlias, created.data.portalAccess.businessSlug);
+  assert.equal(stored.qrDisplayFields.phone, false);
+  assert.equal(stored.emailVerifiedAt, undefined);
+  await Employee.updateOne({ _id: stored._id }, { $set: { emailVerifiedAddress: stored.email, emailVerifiedAt: new Date() } });
+  const changed = await call(`/hr-payroll/employees/${stored._id}`, { method: 'PUT', token: ownerToken, body: { email: 'changed@example.test', emailVerifiedAt: new Date(), emailVerifiedAddress: 'changed@example.test', userId: String(new mongoose.Types.ObjectId()) } });
+  assert.equal(changed.status, 200, changed.data.message);
+  assert.equal(changed.data.userId, String(owner._id));
+  assert.equal(changed.data.emailVerifiedAt, null);
+  assert.equal(changed.data.emailVerifiedAddress, '');
 });
 test('owner uploads employee documents; employee can view only their own private files', options, async () => {
   for (const person of [employee, otherEmployee]) {
@@ -157,7 +230,7 @@ test('only the owner resets employee passwords, invalidating previous passwords 
   assert.equal((await call('/employee/me', { token: employeeToken })).status, 401);
   assert.equal((await call('/employee/auth/login', { method: 'POST', body: { ...credentials(), password: previousPassword } })).status, 401);
   password = nextPassword;
-  const login = await call('/employee/auth/login', { method: 'POST', body: credentials() });
+  const login = await completeLogin(credentials());
   assert.equal(login.status, 200);
   employeeToken = login.data.token;
 });
@@ -169,7 +242,7 @@ test('QR reset invalidates previous links and sessions while retaining the admin
   assert.equal((await call('/employee/auth/login', { method: 'POST', body: old })).status, 404);
   assert.equal((await call('/employee/me', { token: employeeToken })).status, 401);
   const next = credentials(result.data);
-  const login = await call('/employee/auth/login', { method: 'POST', body: next });
+  const login = await completeLogin(next);
   assert.equal(login.status, 200);
   employeeToken = login.data.token;
   await call(`/admin/employees/${employee._id}/access`, { token: ownerToken, method: 'PUT', body: { loginEnabled: false } });

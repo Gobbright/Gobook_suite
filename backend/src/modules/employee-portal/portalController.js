@@ -1,10 +1,12 @@
+import { signPortalToken, safePortalUser } from '../../services/employeePortalSession.js';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+
 import multer from 'multer';
 import { Types } from 'mongoose';
 
 import { env } from '../../config/env.js';
 import { AppUser } from '../../models/AppUser.js';
+import { BusinessSettings } from '../../models/BusinessSettings.js';
 import { Attendance } from '../../models/Attendance.js';
 import { AttendanceCorrection } from '../../models/AttendanceCorrection.js';
 import { Employee } from '../../models/Employee.js';
@@ -15,12 +17,16 @@ import { Payroll } from '../../models/Payroll.js';
 import { reverseGeocodeLocation } from '../../services/reverseGeocode.js';
 import { hasExpectedFileSignature, storeBuffer } from '../../services/gridfsStorage.js';
 import { httpError } from '../../utils/httpError.js';
-import { sessionSeconds } from '../../services/tokenPolicy.js';
-import { createSecuritySession } from '../../services/securitySessions.js';
+
+
 import { employeeMonth, leaveDaysInRange } from '../../services/employeeMonth.js';
-import { EMPLOYEE_ACTIVE_STATUSES, rememberEmployeeAccess, employeeCredential, employeesWithAccess, resolveEmployeeLink } from '../../services/employeeAccess.js';
+import { EMPLOYEE_ACTIVE_STATUSES, rememberEmployeeAccess, employeesWithAccess } from '../../services/employeeAccess.js';
 import { HRDocument } from '../../models/Document.js';
 import { EmployeePermission } from '../../models/EmployeePermission.js';
+import { employeeQrFields } from '../../services/employeeQrProfile.js';
+import { employeeDetails } from '../../services/employeeDetails.js';
+import { queueEmployeeEvent, queueEmployeeNotification } from '../../services/employeeNotifications.js';
+import { breakSummary, netAttendanceHours } from '../../services/attendanceBreaks.js';
 
 const SALT_ROUNDS = 12;
 
@@ -89,6 +95,7 @@ function parseObject(value, fallback = {}) {
 }
 
 function salaryNumber(value, fallback = 0) {
+  if (value === '' || value == null) return fallback;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : fallback;
 }
@@ -190,42 +197,6 @@ async function normalizeAttendanceLocation(value) {
   };
 }
 
-function signPortalToken(user, sid, { mainSession = false, authTime = Math.floor(Date.now() / 1000) } = {}) {
-  return jwt.sign({
-    scope: 'employee-portal',
-    sid,
-    mainSession,
-    iat: authTime,
-    sub: String(user.id),
-    ownerUserId: String(user.ownerUserId),
-    employeeObjectId: user.employeeObjectId ? String(user.employeeObjectId) : '',
-    employeeId: user.employeeId || '',
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    category: user.category || '',
-    businessName: user.businessName || '',
-    loginPath: user.loginPath || '',
-  }, env.jwtSecret, { algorithm: 'HS256', expiresIn: sessionSeconds(env.jwtExpiresIn) });
-}
-
-function safePortalUser(user) {
-  return {
-    id: String(user.id),
-    ownerUserId: String(user.ownerUserId),
-    employeeObjectId: user.employeeObjectId ? String(user.employeeObjectId) : '',
-    employeeId: user.employeeId || '',
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    category: user.category || '',
-    businessName: user.businessName || '',
-    loginPath: user.loginPath || '',
-    portalBasePath: user.portalBasePath || '',
-  };
-}
-
-
 async function resolveOwnerCategory(ownerUserId) {
   const owner = await AppUser.findById(ownerUserId, { category: 1 }).lean();
   return owner?.category || 'retail';
@@ -250,36 +221,7 @@ async function currentEmployee(req) {
   return employee;
 }
 
-export async function loginEmployeePortal(req, res, next) {
-  try {
-    const { employee, owner } = await resolveEmployeeLink(req.body);
-    const password = req.body.password;
-    if (typeof password !== 'string' || !password || Buffer.byteLength(password, 'utf8') > 72) throw httpError(400, 'Enter your employee password');
-    const employeeLogin = await EmployeeLogin.findOne({ ownerUserId: owner._id, employeeObjectId: employee._id, employeeId: employee.employeeId }).select('+passwordHash');
-    if (!employeeLogin) return next(httpError(401, 'Invalid employee ID/email or password'));
-    if (employeeLogin.role !== 'employee') return next(httpError(403, 'Use the admin login to access Employee Management'));
-    if (!employeeLogin.loginEnabled || employeeLogin.status !== 'Active' || !employee.loginAccess || !EMPLOYEE_ACTIVE_STATUSES.includes(employee.status)) return next(httpError(403, 'Login access is disabled'));
-
-    const valid = await bcrypt.compare(password, employeeLogin.passwordHash);
-    if (!valid) return next(httpError(401, 'Invalid employee ID/email or password'));
-
-    const user = {
-      id: employeeLogin._id,
-      ownerUserId: employeeLogin.ownerUserId,
-      employeeObjectId: employeeLogin.employeeObjectId,
-      employeeId: employeeLogin.employeeId,
-      name: employeeLogin.name,
-      email: employeeLogin.email,
-      role: employeeLogin.role,
-      category: employeeLogin.category,
-    };
-    const sid = await createSecuritySession(user.id, 'employee-portal', employeeCredential(employeeLogin.passwordHash, employee), env.jwtExpiresIn);
-    const access = await rememberEmployeeAccess(employee, owner);
-    res.json({ token: signPortalToken(user, sid), user: safePortalUser({ ...user, businessName: owner.businessName || owner.name, loginPath: access.loginPath, portalBasePath: access.portalBasePath }) });
-  } catch (err) {
-    next(err);
-  }
-}
+export { startEmployeeLogin as loginEmployeePortal } from './employeeLoginController.js';
 
 export async function exchangeMainToken(req, res, next) {
   try {
@@ -304,9 +246,12 @@ export async function exchangeMainToken(req, res, next) {
     if (req.employeeUser.employeeId) {
       employee = await Employee.findOne({ userId: req.employeeUser.ownerUserId, employeeId: req.employeeUser.employeeId }).lean();
     }
-    const owner = await AppUser.findById(req.employeeUser.ownerUserId).select('name businessName').lean();
+    const [owner, settings] = await Promise.all([
+      AppUser.findById(req.employeeUser.ownerUserId).select('name businessName').lean(),
+      BusinessSettings.findOne({ userId: req.employeeUser.ownerUserId }).select('logoUrl').lean(),
+    ]);
     const access = employee && owner ? await rememberEmployeeAccess(employee, owner) : null;
-    res.json({ user: { ...req.employeeUser, businessName: owner?.businessName || owner?.name || '', ...(access ? { loginPath: access.loginPath, portalBasePath: access.portalBasePath } : {}) }, employee });
+    res.json({ user: { ...req.employeeUser, businessName: owner?.businessName || owner?.name || '', businessLogoUrl: settings?.logoUrl || '', ...(access ? { loginPath: '/employee-login', portalBasePath: access.portalBasePath } : {}) }, employee });
   } catch (err) {
     next(err);
   }
@@ -369,9 +314,10 @@ export async function checkOut(req, res, next) {
     const checkOutTime = timeNow();
     const checkOutLocation = await normalizeAttendanceLocation(req.body.location);
     const checkIn = existing.checkIn;
+    const breakUpdate = breakSummary(existing.breaks || [], checkOutTime);
     const record = await Attendance.findOneAndUpdate(
-      { _id: existing._id, userId: req.employeeUser.ownerUserId, employeeId: employee.employeeId, date, $or: [{ checkOut: { $exists: false } }, { checkOut: '--' }, { checkOut: '' }] },
-      { $set: { checkOut: checkOutTime, checkOutLocation, hours: hoursBetween(checkIn, checkOutTime), status: existing.status === 'Late' ? 'Late' : 'Present' } },
+      { _id: existing._id, userId: req.employeeUser.ownerUserId, employeeId: employee.employeeId, date, updatedAt: existing.updatedAt, __v: existing.__v, $or: [{ checkOut: { $exists: false } }, { checkOut: '--' }, { checkOut: '' }] },
+      { $set: { ...breakUpdate, checkOut: checkOutTime, checkOutLocation, hours: netAttendanceHours(checkIn, checkOutTime, breakUpdate.breaks), status: existing.status === 'Late' ? 'Late' : 'Present' }, $inc: { __v: 1 } },
       { new: true, runValidators: true },
     ).lean();
     if (!record) throw httpError(409, 'Check out already saved for today');
@@ -539,7 +485,9 @@ export async function listAdminEmployees(req, res, next) {
 export async function createAdminEmployee(req, res, next) {
   try {
     const ownerUserId = req.employeeUser.ownerUserId;
-    const category = await resolveOwnerCategory(ownerUserId);
+    const owner = await AppUser.findById(ownerUserId).select('name businessName email category').lean();
+    if (!owner) throw httpError(404, 'Business owner not found');
+    const category = owner.category || 'retail';
     const {
       employeeId, name, email, mobileNumber, phone, department, dept, designation, joiningDate, joinDate,
       password, loginAccess = false, status = 'Active', role = 'employee', basicSalary = 0,
@@ -547,10 +495,11 @@ export async function createAdminEmployee(req, res, next) {
       employmentType = 'Full Time', shift = '', workLocation = '', emergencyContact = {}, salaryStructure,
     } = req.body;
     const finalLoginAccess = parseBoolean(loginAccess, false);
+    const details = employeeDetails(req.body);
     const finalEmergencyContact = parseObject(emergencyContact);
     if (password !== undefined && typeof password !== 'string') throw httpError(400, 'Password must be text');
     const visiblePassword = password || '';
-    if (!name || !email) return next(httpError(400, 'Employee name and email are required'));
+    if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email))) return next(httpError(400, 'Employee name and a valid email are required'));
     if (finalLoginAccess && !visiblePassword) return next(httpError(400, 'Login password is required when login access is enabled'));
     if (visiblePassword && (visiblePassword.length < 8 || Buffer.byteLength(visiblePassword, 'utf8') > 72)) return next(httpError(400, 'Password must be at least 8 characters and at most 72 bytes'));
     if (finalLoginAccess && await EmployeeLogin.exists({ ownerUserId, email: normalizeEmail(email) })) throw httpError(409, 'An employee login with this email already exists');
@@ -559,6 +508,7 @@ export async function createAdminEmployee(req, res, next) {
     const photo = await saveEmployeePhoto(req.file, ownerUserId);
     const finalBasicSalary = salaryNumber(basicSalary);
     const employee = await Employee.create({
+      ...details,
       userId: ownerUserId,
       category,
       employeeId: finalEmployeeId,
@@ -571,6 +521,7 @@ export async function createAdminEmployee(req, res, next) {
       status,
       loginAccess: finalLoginAccess,
       employeeRole: finalRole,
+      qrDisplayFields: req.body.qrDisplayFields === undefined ? employeeQrFields() : employeeQrFields(parseObject(req.body.qrDisplayFields, null), true),
       basicSalary: finalBasicSalary,
       salaryStructure: normalizeSalaryStructure(salaryStructure, finalBasicSalary),
       ...(photo ? { photo } : {}),
@@ -598,8 +549,10 @@ export async function createAdminEmployee(req, res, next) {
       );
     }
     const payload = employee.toObject();
+    await queueEmployeeNotification(ownerUserId, employee, { requestKey: `employee-created:${employee._id}`, kind: 'profile', title: 'Employee profile created', message: `Your employee profile ${employee.employeeId} has been created by ${owner.businessName || owner.name}. Use your employee login link and email OTP when login access is enabled.` });
     res.status(201).json({
       ...payload,
+      portalAccess: await rememberEmployeeAccess(employee, owner),
       loginContext: {
         ownerUserId: String(ownerUserId),
         category,
@@ -657,10 +610,12 @@ export async function updateAdminEmployee(req, res, next) {
     const finalRole = 'employee';
     const finalName = String(name ?? existing.name).trim();
     const finalEmail = normalizeEmail(email ?? existing.email);
-    if (!finalName || !finalEmail) return next(httpError(400, 'Employee name and email are required'));
+    if (!finalName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(finalEmail)) return next(httpError(400, 'Employee name and a valid email are required'));
+    if (wantsLogin && await EmployeeLogin.exists({ ownerUserId, email: finalEmail, employeeObjectId: { $ne: existing._id } })) throw httpError(409, 'An employee login with this email already exists');
 
     const finalBasicSalary = Number.isFinite(Number(basicSalary)) ? salaryNumber(basicSalary, existing.basicSalary) : existing.basicSalary;
     const update = {
+      ...employeeDetails(req.body),
       name: finalName,
       email: finalEmail,
       phone: mobileNumber !== undefined ? String(mobileNumber ?? '').trim() : existing.phone,
@@ -682,17 +637,25 @@ export async function updateAdminEmployee(req, res, next) {
       shift: shift !== undefined ? String(shift || '').trim() : existing.shift,
       workLocation: workLocation !== undefined ? String(workLocation || '').trim() : existing.workLocation,
     };
+    if (finalEmail !== normalizeEmail(existing.email)) {
+      update.emailVerifiedAddress = '';
+      update.emailVerifiedAt = null;
+    }
+    if (req.body.qrDisplayFields !== undefined) update.qrDisplayFields = employeeQrFields(parseObject(req.body.qrDisplayFields, null), true);
     if (emergencyContact !== undefined) {
+      const contact = parseObject(emergencyContact);
       update.emergencyContact = {
-        name: String(emergencyContact?.name || '').trim(),
-        relationship: String(emergencyContact?.relationship || '').trim(),
-        phone: String(emergencyContact?.phone || '').trim(),
+        name: String(contact.name || '').trim(),
+        relationship: String(contact.relationship || '').trim(),
+        phone: String(contact.phone || '').trim(),
       };
     }
     if (salaryStructure !== undefined || basicSalary !== undefined) {
       update.salaryStructure = normalizeSalaryStructure(salaryStructure, finalBasicSalary, existing.salaryStructure);
     }
 
+    const updatedPhoto = await saveEmployeePhoto(req.file, ownerUserId);
+    if (updatedPhoto) update.photo = updatedPhoto;
     const employee = await Employee.findOneAndUpdate(
       { _id: existing._id, userId: ownerUserId },
       { $set: update, $unset: { loginPassword: 1 } },
@@ -757,6 +720,31 @@ export async function deleteAdminEmployee(req, res, next) {
     next(err);
   }
 }
+export async function changeBreak(req, res, next) {
+  try {
+    const employee = await currentEmployee(req);
+    if (!['start', 'end'].includes(req.body.action)) throw httpError(400, 'Choose start or end break');
+    const filter = { userId: req.employeeUser.ownerUserId, employeeId: employee.employeeId, date: today() };
+    const existing = await Attendance.findOne(filter).lean();
+    if (!existing?.checkIn || existing.checkIn === '--' || (existing.checkOut && existing.checkOut !== '--')) throw httpError(409, 'Breaks are available between check in and check out');
+    const breaks = (existing.breaks || []).map(({ start, end }) => ({ start, end }));
+    const active = breaks.length && !breaks.at(-1).end;
+    if (req.body.action === 'start') {
+      if (active) throw httpError(409, 'A break is already in progress');
+      if (breaks.length >= 30) throw httpError(400, 'Daily break limit reached');
+      breaks.push({ start: timeNow(), end: '' });
+    } else {
+      if (!active) throw httpError(409, 'Start a break first');
+      breaks.at(-1).end = timeNow();
+    }
+    const summary = breakSummary(breaks);
+    if (breaks.some((row) => row.start < existing.checkIn)) throw httpError(400, 'Breaks cannot start before check in');
+    const record = await Attendance.findOneAndUpdate({ ...filter, _id: existing._id, updatedAt: existing.updatedAt, __v: existing.__v }, { $set: summary, $inc: { __v: 1 } }, { new: true, runValidators: true }).lean();
+    if (!record) throw httpError(409, 'Attendance changed. Refresh and try again');
+    res.json(record);
+  } catch (error) { next(error); }
+}
+
 export async function adminTodayAttendance(req, res, next) {
   try {
     const date = String(req.query.date || today()).trim();
@@ -798,6 +786,11 @@ export async function markAdminAttendance(req, res, next) {
     if (!employee) return next(httpError(404, 'Employee not found'));
     const allowed = ['Present', 'Late', 'Absent', 'On Leave', 'WFH', 'On Duty', 'Half Day', 'Weekly Off', 'Holiday'];
     const finalStatus = allowed.includes(status) ? status : 'Present';
+    const current = await Attendance.findOne({ userId: ownerUserId, employeeId, date }).lean();
+    const breaks = req.body.breaks === undefined ? current?.breaks || [] : req.body.breaks;
+    if (!Array.isArray(breaks) || breaks.length > 30 || breaks.some((row) => !row || typeof row.start !== 'string' || (row.end != null && typeof row.end !== 'string'))) throw httpError(400, 'Enter valid break times');
+    if (breaks.length && (!checkIn || checkIn === '--' || breaks.some((row) => row.start < checkIn || (checkOut && checkOut !== '--' && (row.start > checkOut || row.end > checkOut))))) throw httpError(400, 'Breaks must be within attendance times');
+    const summary = breakSummary(breaks, checkOut && checkOut !== '--' ? checkOut : undefined);
     const record = await Attendance.findOneAndUpdate(
       { userId: ownerUserId, employeeId, date },
       {
@@ -810,7 +803,8 @@ export async function markAdminAttendance(req, res, next) {
           status: finalStatus,
           checkIn: checkIn || '--',
           checkOut: checkOut || '--',
-          hours: hoursBetween(checkIn, checkOut),
+          ...summary,
+          hours: checkIn && checkIn !== '--' && checkOut && checkOut !== '--' ? netAttendanceHours(checkIn, checkOut, summary.breaks) : '--',
           shift: shift || employee.shift || '',
           remarks,
         },
@@ -980,6 +974,8 @@ export async function updateLeaveStatus(req, res, next) {
       });
     }
 
+    await queueEmployeeEvent(ownerUserId, leave.empId, { requestKey: `leave:${leave._id}:${status}`, kind: 'leave', title: `Leave request ${status.toLowerCase()}`, message: `Your ${leave.type} request for ${leave.from} to ${leave.to} is ${status.toLowerCase()}.` });
+
     res.json(leave);
   } catch (err) {
     next(err);
@@ -1023,6 +1019,7 @@ export async function generateAdminPayroll(req, res, next) {
               allowances,
               deductions,
               net: Math.max(0, basic + allowances - deductions),
+              salaryStructure: structure,
               status: 'Pending',
             },
           },
@@ -1032,6 +1029,7 @@ export async function generateAdminPayroll(req, res, next) {
     });
     if (operations.length) await Payroll.bulkWrite(operations, { ordered: false });
     const data = await Payroll.find({ userId: ownerUserId, month }).sort({ createdAt: -1 }).lean();
+    for (const row of data) await queueEmployeeEvent(ownerUserId, row.employeeId, { requestKey: `payroll-generated:${row._id}:${row.updatedAt?.getTime() || month}`, kind: 'payroll', title: 'Payslip available', message: `Your payslip for ${month} is available in the employee portal. Payment status: ${row.status}.` });
     res.status(201).json({ data, message: `Payroll generated for ${data.length} employee(s).` });
   } catch (err) {
     next(err);
@@ -1043,8 +1041,10 @@ export async function approveAdminPayroll(req, res, next) {
     const ownerUserId = req.employeeUser.ownerUserId;
     const month = String(req.body.month || '').trim();
     employeeMonth(month);
+    const pending = await Payroll.find({ userId: ownerUserId, month, status: { $ne: 'Paid' } }).select('_id').lean();
     await Payroll.updateMany({ userId: ownerUserId, month }, { $set: { status: 'Paid' } });
     const data = await Payroll.find({ userId: ownerUserId, month }).sort({ createdAt: -1 }).lean();
+    for (const row of data.filter((item) => pending.some((record) => String(record._id) === String(item._id)))) await queueEmployeeEvent(ownerUserId, row.employeeId, { requestKey: `payroll-paid:${row._id}:${row.updatedAt?.getTime() || month}`, kind: 'payroll', title: 'Payroll marked paid', message: `Your payroll for ${month} has been marked paid. View your payslip for details.` });
     res.json({ data, message: `Payroll approved for ${data.length} employee(s).` });
   } catch (err) {
     next(err);
@@ -1067,6 +1067,7 @@ export async function updateAdminPayroll(req, res, next) {
     const payroll = await Payroll.findOneAndUpdate(
       { _id: req.params.id, userId: req.employeeUser.ownerUserId },
       {
+        $unset: { salaryStructure: 1 },
         $set: {
           basic,
           allowances,

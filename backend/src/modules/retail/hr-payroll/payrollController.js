@@ -1,3 +1,4 @@
+import { queueEmployeeEvent } from '../../../services/employeeNotifications.js';
 import { Payroll } from '../../../models/Payroll.js';
 import { httpError } from '../../../utils/httpError.js';
 import { asNumber, asText, enumValue, importSummary, parseExcelRows } from '../../../utils/excelImport.js';
@@ -103,7 +104,8 @@ export async function createPayrollRecord(req, res, next) {
       if (existing) return next(httpError(409, 'Payroll record already exists for this employee and month'));
     }
     const net = Number(basic) + Number(allowances) - Number(deductions);
-    const record = await Payroll.create({ ...req.body, userId, basic, allowances, deductions, net });
+    const record = await Payroll.create({ ...req.body, salaryStructure: undefined, userId, basic, allowances, deductions, net });
+    await queueEmployeeEvent(userId, record.employeeId, { requestKey: `payroll:${record._id}:created`, kind: 'payroll', title: 'Payslip available', message: `Your payslip for ${record.month} is available in your employee portal.` });
     res.status(201).json(record);
   } catch (err) {
     if (err.code === 11000) return next(httpError(409, 'Payroll record already exists for this employee and month'));
@@ -146,7 +148,7 @@ export async function importPayroll(req, res, next) {
 
       const existing = await Payroll.findOne({ userId, employeeId, month });
       if (existing) {
-        await Payroll.findByIdAndUpdate(existing._id, { $set: data }, { runValidators: true });
+        await Payroll.findByIdAndUpdate(existing._id, { $set: data, $unset: { salaryStructure: 1 } }, { runValidators: true });
         summary.updated++;
       } else {
         await Payroll.create(data);
@@ -165,6 +167,7 @@ export async function importPayroll(req, res, next) {
 export async function updatePayrollRecord(req, res, next) {
   try {
     const update = { ...req.body };
+    delete update.salaryStructure;
     if (update.basic !== undefined || update.allowances !== undefined || update.deductions !== undefined) {
       const existing = await Payroll.findOne({ _id: req.params.id, userId: req.user.id }).lean();
       const basic = update.basic ?? existing?.basic ?? 0;
@@ -174,10 +177,11 @@ export async function updatePayrollRecord(req, res, next) {
     }
     const record = await Payroll.findOneAndUpdate(
       { _id: req.params.id, userId: req.user.id },
-      { $set: update },
+      { $set: update, ...(update.net !== undefined ? { $unset: { salaryStructure: 1 } } : {}) },
       { new: true, runValidators: true },
     ).lean();
     if (!record) return next(httpError(404, 'Payroll record not found'));
+    await queueEmployeeEvent(req.user.id, record.employeeId, { requestKey: `payroll:${record._id}:${record.status}:${record.updatedAt?.getTime() || ''}`, kind: 'payroll', title: 'Payslip updated', message: `Your payslip for ${record.month} was updated. Payment status: ${record.status}.` });
     res.json(record);
   } catch (err) {
     next(err);
@@ -194,6 +198,7 @@ export async function patchPayrollStatus(req, res, next) {
       { new: true },
     ).lean();
     if (!record) return next(httpError(404, 'Payroll record not found'));
+    await queueEmployeeEvent(req.user.id, record.employeeId, { requestKey: `payroll:${record._id}:${record.status}:${record.updatedAt?.getTime() || ''}`, kind: 'payroll', title: 'Payslip updated', message: `Your payslip for ${record.month} was updated. Payment status: ${record.status}.` });
     res.json(record);
   } catch (err) {
     next(err);

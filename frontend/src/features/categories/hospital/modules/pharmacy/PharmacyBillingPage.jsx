@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Barcode,
@@ -283,11 +284,11 @@ export function PharmacyBillingPage() {
   function addMedicine(medicine, qty = 1) {
     if (!medicine) return;
     if (isExpired(medicine.expiry)) {
-      window.alert(`${medicine.name} is expired and cannot be billed.`);
+      notify(`${medicine.name} is expired and cannot be billed.`);
       return;
     }
     if (medicine.stock <= 0) {
-      window.alert(`${medicine.name} is out of stock.`);
+      notify(`${medicine.name} is out of stock.`);
       return;
     }
     setItems((current) => {
@@ -373,19 +374,19 @@ export function PharmacyBillingPage() {
 
   async function payBill() {
     if (!walkIn && !selectedPatient) {
-      window.alert('Select a patient or choose Walk-in Customer.');
+      notify('Select a patient or choose Walk-in Customer.');
       return;
     }
     if (!items.length) {
-      window.alert('Add at least one medicine.');
+      notify('Add at least one medicine.');
       return;
     }
     if (hasInvalidStock) {
-      window.alert('Some item quantities exceed current stock.');
+      notify('Some item quantities exceed current stock.');
       return;
     }
     if (hasExpiredItem) {
-      window.alert('Expired medicine cannot be billed.');
+      notify('Expired medicine cannot be billed.');
       return;
     }
 

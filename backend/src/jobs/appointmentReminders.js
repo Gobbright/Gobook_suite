@@ -4,6 +4,7 @@ import { AppUser } from '../models/AppUser.js';
 import { BusinessSettings } from '../models/BusinessSettings.js';
 import { ModuleRecord } from '../models/ModuleRecord.js';
 import { sendMail, buildSmtpOverride } from '../utils/mailer.js';
+import { isBusinessEmailVerified } from '../services/businessEmail.js';
 
 const DEFAULT_ZONE = 'Asia/Kolkata';
 const TIMEZONE_LABEL_RE = /\(GMT\s*[+-]\d{2}:\d{2}\)\s*(.+)$/;
@@ -32,6 +33,7 @@ function getAppointmentReminderHtml({ patientName, doctorName, departmentName, d
 }
 
 async function remindHospital({ hospital, settings, force, now, resend }) {
+  if (!isBusinessEmailVerified(settings)) return { skipped: 'email-verification-required' };
   const ianaZone = extractIanaZone(settings?.timezone);
   const localNow = now ? now.setZone(ianaZone) : DateTime.now().setZone(ianaZone);
   const todayLocalISO = localNow.toISODate();

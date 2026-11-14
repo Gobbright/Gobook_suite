@@ -30,7 +30,7 @@ export function createSecurityRateLimit({ bucket, limit, windowMs = 15 * 60000, 
 export const authIpLimit = createSecurityRateLimit({ bucket: 'auth-ip', limit: 60 });
 export const authAccountLimit = createSecurityRateLimit({
   bucket: 'auth-account', limit: 15,
-  identify: (req) => `${req.ip || req.socket?.remoteAddress || 'unknown'}:${String(req.body?.email || req.body?.adminId || req.body?.employeeId || '').trim().toLowerCase()}`,
+  identify: (req) => `${req.ip || req.socket?.remoteAddress || 'unknown'}:${String(req.body?.username || '').trim().toLowerCase()}:${String(req.body?.email || req.body?.adminId || req.body?.employeeId || req.body?.challengeId || '').trim().toLowerCase()}`,
 });
 export const paymentLimit = createSecurityRateLimit({ bucket: 'payment-ip', limit: 60 });
 export const otpSendLimit = createSecurityRateLimit({ bucket: 'otp-send-ip', limit: 12 });

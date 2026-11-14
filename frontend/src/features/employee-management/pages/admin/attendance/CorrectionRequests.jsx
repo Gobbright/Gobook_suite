@@ -1,3 +1,5 @@
+import { useRequestedEmployeeMonth } from '../../../hooks/useRequestedEmployeeMonth.js';
+import { TimeInput12 } from '../../../../../components/forms/TimeInput12.jsx';
 import { useMemo, useState } from 'react';
 import { Download, Eye, FileText, Plus, X } from 'lucide-react';
 
@@ -12,7 +14,7 @@ function dateText(value) {
   if (!value) return '-';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 function statusClass(status) {
@@ -22,7 +24,7 @@ function statusClass(status) {
 }
 
 export default function CorrectionRequests() {
-  const [month, setMonth] = useState(currentEmployeeMonth);
+  const [month, setMonth] = useRequestedEmployeeMonth();
   const { data, loading, error, setData } = useLoad(() => attendanceService.corrections(month), [month]);
   const employeesLoad = useLoad(adminService.employees, []);
   const rows = data?.data || [];
@@ -123,8 +125,8 @@ export default function CorrectionRequests() {
             <div className="employee-modal-head"><h2>New Correction Request</h2><button className="icon-btn" type="button" onClick={() => setModalOpen(false)}><X size={17} /></button></div>
             <label className="hr-field">Employee<select value={form.employeeId} onChange={(e) => setForm((current) => ({ ...current, employeeId: e.target.value }))}><option value="">Select employee</option>{employees.map((employee) => <option key={employee.employeeId} value={employee.employeeId}>{employee.name} ({employee.employeeId})</option>)}</select></label>
             <label className="hr-field">Date<input type="date" value={form.date} onChange={(e) => setForm((current) => ({ ...current, date: e.target.value }))} /></label>
-            <label className="hr-field">Check In<input value={form.checkIn} onChange={(e) => setForm((current) => ({ ...current, checkIn: e.target.value }))} placeholder="09:00" /></label>
-            <label className="hr-field">Check Out<input value={form.checkOut} onChange={(e) => setForm((current) => ({ ...current, checkOut: e.target.value }))} placeholder="18:00" /></label>
+            <label className="hr-field">Check In<TimeInput12 label="Check In" value={form.checkIn} onChange={(e) => setForm((current) => ({ ...current, checkIn: e.target.value }))} /></label>
+            <label className="hr-field">Check Out<TimeInput12 label="Check Out" value={form.checkOut} onChange={(e) => setForm((current) => ({ ...current, checkOut: e.target.value }))} /></label>
             <label className="hr-field">Reason<textarea value={form.reason} onChange={(e) => setForm((current) => ({ ...current, reason: e.target.value }))} placeholder="Reason for correction" /></label>
             <div className="employee-modal-actions"><button className="btn" type="button" onClick={() => setModalOpen(false)}>Cancel</button><button className="btn primary" disabled={saving}>{saving ? 'Saving...' : 'Submit Request'}</button></div>
           </form>

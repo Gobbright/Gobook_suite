@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { exportRows } from '../../../../../utils/exportRows.js';
 import { RecordEditDialog } from '../../../../../components/forms/RecordEditDialog.jsx';
@@ -104,7 +105,7 @@ export function GuestListPage() {
         if (guest.recordId) await deleteModuleRecord(guest.recordId);
         setGuests((current) => current.filter((item) => item.recordId !== guest.recordId));
       } catch (err) {
-        window.alert(err.message || 'Unable to delete guest.');
+        notify(err.message || 'Unable to delete guest.');
       }
     }
   }

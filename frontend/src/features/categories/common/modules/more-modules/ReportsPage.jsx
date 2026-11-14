@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
@@ -223,7 +224,7 @@ function DefaultReportsPage() {
     try {
       await downloadReportCsv(report.downloadKey, report.name, { branch });
     } catch (err) {
-      window.alert(err.message || 'Report download failed');
+      notify(err.message || 'Report download failed');
     }
   }
 
@@ -231,7 +232,7 @@ function DefaultReportsPage() {
     try {
       await downloadReportPdf(report.downloadKey, report.name, { branch });
     } catch (err) {
-      window.alert(err.message || 'Report PDF download failed');
+      notify(err.message || 'Report PDF download failed');
     }
   }
 
@@ -288,7 +289,7 @@ function DefaultReportsPage() {
             className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-[13px] font-semibold text-[#374151] bg-white border border-[#dbe4ef] rounded-md cursor-pointer hover:bg-gray-50 font-[inherit] disabled:opacity-50 disabled:cursor-not-allowed"
             type="button"
             disabled={reports.length === 0}
-            onClick={() => downloadReportTablePdf('Reports Directory', ['Report Name', 'Category', 'Description', 'Last Generated'], reports.map((report) => [report.name, report.category, report.description, report.lastGenerated ?? '-']), { subtitle: `${reports.length} reports` }).catch((err) => window.alert(err.message || 'PDF export failed'))}
+            onClick={() => downloadReportTablePdf('Reports Directory', ['Report Name', 'Category', 'Description', 'Last Generated'], reports.map((report) => [report.name, report.category, report.description, report.lastGenerated ?? '-']), { subtitle: `${reports.length} reports` }).catch((err) => notify(err.message || 'PDF export failed'))}
           >
             <FileText size={14} />
             Export Directory PDF

@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
 import { AutomobileBarcodePage } from '../../../automobile/AutomobileBarcodePage.jsx';
@@ -945,7 +946,7 @@ export function BarcodePage() {
         document.body.appendChild(printFrame);
       })
       .catch((err) => {
-        alert(err.message || 'Unable to prepare barcode labels. Please try again.');
+        notify(err.message || 'Unable to prepare barcode labels. Please try again.');
         setPrintJob(null);
       });
     return () => {
@@ -975,7 +976,7 @@ export function BarcodePage() {
       setProducts((prev) => prev.map((product) => updatedById.get(product._id) || product));
       if (useAutomobileLayout) setPrintActivity((previous) => [...previous, { at: new Date().toISOString(), increments: validIncrements }]);
     } catch (err) {
-      alert(err.message || 'Printed count was not saved');
+      notify(err.message || 'Printed count was not saved');
     }
   }
 
@@ -994,7 +995,7 @@ export function BarcodePage() {
     if (input == null) return;
     const labelCount = Math.max(0, Math.floor(Number(input)));
     if (!Number.isFinite(labelCount) || labelCount <= 0) {
-      alert('Enter a valid number greater than 0');
+      notify('Enter a valid number greater than 0');
       return;
     }
     setPrintJob({ layout: 'thermal80', labels: labelsForRows([row], () => labelCount), increments: [buildPrintIncrement(row, labelCount)] });
@@ -1006,7 +1007,7 @@ export function BarcodePage() {
       await api.invResetBarcodePrintCounts({ itemType });
       loadProducts();
     } catch (err) {
-      alert(err.message || 'Printed counts were not reset');
+      notify(err.message || 'Printed counts were not reset');
     }
   }
 
@@ -1014,7 +1015,7 @@ export function BarcodePage() {
     if (!window.confirm('Delete this product? This cannot be undone.')) return;
     api.invDeleteProduct(id)
       .then(() => setProducts((prev) => prev.filter((p) => p._id !== id)))
-      .catch(() => alert('Failed to delete product'));
+      .catch(() => notify('Failed to delete product'));
   }
 
   const labelElements = [

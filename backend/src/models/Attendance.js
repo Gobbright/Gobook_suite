@@ -28,6 +28,8 @@ const attendanceSchema = new Schema({
   checkInLocation:  { type: attendanceLocationSchema, default: null },
   checkOutLocation: { type: attendanceLocationSchema, default: null },
   hours:      { type: String, default: '--' },
+  breaks: { type: [{ _id: false, start: { type: String, required: true }, end: { type: String, default: '' } }], default: [] },
+  breakMinutes: { type: Number, default: 0, min: 0 },
   shift:      { type: String, default: '', trim: true },
   remarks:    { type: String, default: '', trim: true },
   status:     { type: String, enum: ['Present', 'Late', 'Absent', 'On Leave', 'WFH', 'On Duty', 'Half Day', 'Weekly Off', 'Holiday'], default: 'Absent' },
@@ -37,4 +39,5 @@ attendanceSchema.index({ userId: 1, date: 1, dept: 1 });
 attendanceSchema.index({ userId: 1, date: 1, status: 1 });
 attendanceSchema.index({ userId: 1, employeeId: 1, date: 1 }, { unique: true });
 
+attendanceSchema.index({ userId: 1, updatedAt: -1, _id: -1 });
 export const Attendance = model('Attendance', attendanceSchema);

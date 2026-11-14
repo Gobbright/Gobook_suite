@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Download, Mail, MessageCircle, Printer } from 'lucide-react';
+import { Mail, Printer } from 'lucide-react';
+import { EmployeeReportButtons } from '../../../components/common/EmployeeReportButtons.jsx';
+import { BusinessLogo } from '../../../components/common/BusinessLogo.jsx';
+import { adminService } from '../../../services/adminService.js';
 
 import { useLoad } from '../../../hooks/useLoad.js';
 import { payrollService } from '../../../services/payrollService.js';
@@ -11,19 +14,21 @@ export default function Payslips() {
   const [month, setMonth] = useState(() => /^\d{4}-(0[1-9]|1[0-2])$/.test(params.get('month') || '') ? params.get('month') : payrollMonth());
   const [employeeId, setEmployeeId] = useState(() => params.get('employee') || '');
   const [message, setMessage] = useState('');
+  const [emailBusy, setEmailBusy] = useState(false);
+  const emailRequest = useRef(null);
+  const business = useLoad(adminService.emailSettings, []);
   const { data, loading, error } = useLoad(() => payrollService.adminPayroll(month), [month]);
   const rows = data?.data || [];
   const selected = rows.find((row) => row.employeeId === employeeId) || rows[0];
   const gross = Number(selected?.basic || 0) + Number(selected?.allowances || 0);
 
-  function downloadPayslip() {
-    if (!selected) return;
-    const blob = new Blob([`${selected.name} payslip\nGross: ${gross}\nDeductions: ${selected.deductions}\nNet: ${selected.net}`], { type: 'text/plain' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `payslip-${selected.employeeId}-${month}.txt`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+  async function emailPayslip() {
+    if (!selected || emailBusy) return;
+    setEmailBusy(true);
+    if (emailRequest.current?.id !== selected._id) emailRequest.current = { id: selected._id, requestId: crypto.randomUUID() };
+    try { const result = await payrollService.email(selected._id, emailRequest.current.requestId); setMessage(result.message); emailRequest.current = null; }
+    catch (failure) { setMessage(failure.message); }
+    finally { setEmailBusy(false); }
   }
 
   return (
@@ -49,12 +54,12 @@ export default function Payslips() {
         </aside>
         <section className="hr-card payslip-preview">
           {loading ? <p>Loading payslip...</p> : selected ? <>
-            <h2>GoBook HR Solutions Pvt. Ltd.</h2>
+            <BusinessLogo user={{ businessName: business.data?.businessName || 'Business', businessLogoUrl: business.data?.logoUrl }} /><h2>{business.data?.businessName || 'Business'}</h2>
             <p>Payslip for the month of {month}</p>
             <div className="payslip-meta"><span>Employee Name <strong>{selected.name}</strong></span><span>Employee ID <strong>{selected.employeeId}</strong></span><span>Department <strong>{selected.dept || '-'}</strong></span><span>Payment Status <strong>{selected.status}</strong></span></div>
             <div className="payslip-columns"><section><h3>Earnings</h3><p><span>Basic Salary</span><strong>{money(selected.basic)}</strong></p><p><span>Allowances</span><strong>{money(selected.allowances)}</strong></p><b><span>Gross Salary</span><strong>{money(gross)}</strong></b></section><section><h3>Deductions</h3><p><span>Payroll Deductions</span><strong>{money(selected.deductions)}</strong></p><b className="danger"><span>Total Deductions</span><strong>{money(selected.deductions)}</strong></b></section></div>
             <div className="payslip-net">Net Salary <strong>{money(selected.net)}</strong></div>
-            <div className="payslip-actions"><button className="hr-btn" type="button" onClick={downloadPayslip}><Download size={14} /> Download</button><button className="hr-btn" type="button" onClick={() => window.print()}><Printer size={14} /> Print</button><button className="hr-btn" type="button" onClick={() => setMessage(`Email queued for ${selected.name}.`)}><Mail size={14} /> Email</button><button className="hr-btn" type="button" onClick={() => setMessage(`WhatsApp message prepared for ${selected.name}.`)}><MessageCircle size={14} /> WhatsApp</button></div>
+            <EmployeeReportButtons kind="payroll" month={month} employeeId={selected.employeeId} /><div className="payslip-actions"><button className="hr-btn" type="button" onClick={() => window.print()}><Printer size={14} /> Print</button><button className="hr-btn" type="button" disabled={emailBusy} onClick={emailPayslip}><Mail size={14} />{emailBusy ? 'Queueing...' : 'Email PDF payslip'}</button></div>
           </> : <p>No payslip selected.</p>}
         </section>
       </div>

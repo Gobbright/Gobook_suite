@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
 import { useEffect, useRef, useState } from 'react';
@@ -357,7 +358,7 @@ export function MedicinesPage() {
     if (!window.confirm('Delete this medicine?')) return;
     api.invDeleteProduct(id)
       .then(() => { setProducts((prev) => prev.filter((p) => p._id !== id)); loadStats(); })
-      .catch(() => alert('Failed to delete medicine'));
+      .catch(() => notify('Failed to delete medicine'));
   }
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));

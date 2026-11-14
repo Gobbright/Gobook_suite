@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useNavigationCounts } from '../../app/NavigationCountsContext.jsx';
+import { NavigationCountBadge } from './NavigationCountBadge.jsx';
 import {
   Activity, AlertTriangle, ArrowRightLeft, Award, BarChart2, BarChart3, BedDouble, Bell, BookOpen,
   Building2, Bus, CalendarCheck, CalendarClock, CalendarOff, Car, CheckSquare, ChevronDown, Contact,
@@ -101,6 +103,7 @@ function isNavLocked(section, item) {
 }
 
 export function Sidebar({ mobileOpen = false, onClose = () => {} }) {
+  const navigationCounts = useNavigationCounts();
   const location = useLocation();
   const storedUser = useCurrentUser();
   const currentPath = normalizeAppPath(location.pathname || '/dashboard');
@@ -234,6 +237,7 @@ export function Sidebar({ mobileOpen = false, onClose = () => {} }) {
                       <span className="min-w-0 truncate">{section.title}</span>
                       {section.locked && <Lock size={12} strokeWidth={2.2} className="flex-none" />}
                     </span>
+                    {!section.locked && section.title === 'Employee Management' && <NavigationCountBadge count={navigationCounts.employeeTotal} label="unread employee notifications" />}
                     <ChevronDown
                       size={13}
                       strokeWidth={2.5}
@@ -243,7 +247,7 @@ export function Sidebar({ mobileOpen = false, onClose = () => {} }) {
 
                   {(openSection === section.title || section.hotelRole === 'active') && (
                     <div className={`mt-0.5 flex flex-col gap-1 animate-fade-slide-down ${section.hotelRole === 'active' ? 'min-h-0 flex-1 overflow-y-auto pr-1' : ''}`}>
-                      {section.items.map((item) => {
+                      {section.items.filter((item) => !item.secondary).map((item) => {
                         const locked = isNavLocked(section, item);
                         if (item.children) {
                           const hasActiveChild = item.children.some((c) => currentPath === normalizeAppPath(c.href));
@@ -327,7 +331,7 @@ export function Sidebar({ mobileOpen = false, onClose = () => {} }) {
                           );
                         }
 
-                        const active = currentPath === normalizeAppPath(item.href);
+                        const active = currentPath === normalizeAppPath(item.href) || (item.href === '/employee-management/employees' && section.items.some((entry) => entry.secondary && currentPath === normalizeAppPath(entry.href)));
                         return (
                           <Link
                             key={item.label}

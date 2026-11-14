@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
 import { useState, useEffect, useCallback } from 'react';
@@ -187,13 +188,13 @@ export function LeaveManagementPage() {
 
   const handleStatusChange = async (id, newStatus) => {
     try { await api.hrPatchLeaveStatus(id, newStatus); fetchLeaves(); fetchStats(); }
-    catch (err) { alert(err.message); }
+    catch (err) { notify(err.message); }
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this leave register entry?')) return;
     try { await api.hrDeleteLeave(id); fetchLeaves(); fetchStats(); }
-    catch (err) { alert(err.message); }
+    catch (err) { notify(err.message); }
   };
 
   const handleSaved = () => { setModal(null); fetchLeaves(); fetchStats(); };

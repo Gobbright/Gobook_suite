@@ -39,10 +39,10 @@ export const apiRouter = Router();
 apiRouter.get('/auth/security-config', getHumanVerificationConfig);
 apiRouter.use((req, res, next) => {
   const requestPath = req.path.toLowerCase().replace(/\/+$/, '');
-  const authentication = requestPath.startsWith('/auth/') || ['/admin/login', '/employee/auth/login'].includes(requestPath);
+  const authentication = requestPath.startsWith('/auth/') || ['/admin/login', '/employee/auth/login', '/employee/auth/verify-otp', '/employee/auth/resend-otp'].includes(requestPath);
   if (req.method === 'POST' && authentication && !['/auth/logout', '/auth/complete-onboarding'].includes(requestPath)) {
     // Authentication inputs must be scalars, never MongoDB query objects.
-    for (const field of ['email', 'password', 'adminId', 'employeeId', 'ownerUserId', 'credential', 'otp', 'deviceOtp']) {
+    for (const field of ['email', 'username', 'password', 'adminId', 'employeeId', 'ownerUserId', 'credential', 'challengeId', 'otp', 'deviceOtp']) {
       if (req.body?.[field] !== undefined && typeof req.body[field] !== 'string') return res.status(400).json({ message: 'Invalid authentication details' });
     }
     if (typeof req.body?.password === 'string' && Buffer.byteLength(req.body.password, 'utf8') > 72) return res.status(400).json({ message: 'Password must not exceed 72 bytes' });
@@ -52,7 +52,7 @@ apiRouter.use((req, res, next) => {
   next();
 });
 apiRouter.use((req, res, next) => {
-  if (req.method === 'POST' && ['/auth/register', '/auth/email-otp/start', '/auth/forgot-password', '/auth/resend-email-otp'].includes(req.path.toLowerCase().replace(/\/+$/, ''))) return otpSendLimit(req, res, next);
+  if (req.method === 'POST' && ['/auth/register', '/auth/email-otp/start', '/auth/forgot-password', '/auth/resend-email-otp', '/employee/auth/login', '/employee/auth/resend-otp'].includes(req.path.toLowerCase().replace(/\/+$/, ''))) return otpSendLimit(req, res, next);
   next();
 });
 apiRouter.use(requireHumanVerification);

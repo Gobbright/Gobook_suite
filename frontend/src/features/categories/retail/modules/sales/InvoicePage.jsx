@@ -1,3 +1,4 @@
+import { useRequireBusinessEmail } from '../../../../../hooks/useRequireBusinessEmail.js';
 import { AutomobileInvoiceList } from '../../../automobile/AutomobileInvoiceList.jsx';
 import { useAutomobileListingLayout } from '../../../../../hooks/useAutomobileListingLayout.js';
 import { SalesWorkflowDialog } from './shared/SalesWorkflowDialog.jsx';
@@ -204,6 +205,7 @@ function PaymentStatusBadge({ status }) {
 }
 
 function ShareModal({ invoice, onClose }) {
+  const requireBusinessEmail = useRequireBusinessEmail();
   const [emailTo, setEmailTo]   = useState(invoice.customer?.email || '');
   const [sending, setSending]   = useState(false);
   const [result, setResult]     = useState(null);
@@ -219,6 +221,7 @@ function ShareModal({ invoice, onClose }) {
   }
 
   async function handleEmail() {
+    if (!requireBusinessEmail()) return;
     if (!emailTo.trim()) return;
     setSending(true);
     setResult(null);

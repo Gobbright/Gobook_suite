@@ -3,10 +3,15 @@ import cron from 'node-cron';
 import { runAppointmentReminders } from './appointmentReminders.js';
 import { runScheduledCampaigns } from './emailCampaigns.js';
 import { runSubscriptionLifecycle } from './subscriptionLifecycle.js';
+import { dispatchEmployeeNotifications } from '../services/employeeNotifications.js';
 
 export function startScheduledJobs() {
   // Local snapshots must not send production campaign/reminder emails.
   if (process.env.SCHEDULED_JOBS_ENABLED === 'false') return;
+
+  cron.schedule('* * * * *', () => {
+    dispatchEmployeeNotifications().catch((err) => console.error('[employee-notifications] scheduled run failed:', err.message));
+  });
 
   cron.schedule('*/15 * * * *', () => {
     runAppointmentReminders().catch((err) => {

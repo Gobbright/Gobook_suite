@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -214,7 +215,7 @@ export function DocumentsPage() {
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this document? The file will also be removed.')) return;
     try { await api.hrDeleteDocument(id); fetchDocuments(); fetchFolderCounts(); }
-    catch (err) { alert(err.message); }
+    catch (err) { notify(err.message); }
   };
 
   const handleSaved = () => { setModal(null); fetchDocuments(); fetchFolderCounts(); };

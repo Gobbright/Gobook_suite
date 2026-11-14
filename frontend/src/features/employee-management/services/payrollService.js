@@ -8,4 +8,5 @@ export const payrollService = {
   generate: (month) => api.post('/admin/payroll/generate', { month }),
   approve: (month) => api.post('/admin/payroll/approve', { month }),
   update: (id, payload) => api.put(`/admin/payroll/${id}`, payload),
+  email: (id, requestId) => api.post(`/admin/payroll/${id}/email`, { requestId }),
 };

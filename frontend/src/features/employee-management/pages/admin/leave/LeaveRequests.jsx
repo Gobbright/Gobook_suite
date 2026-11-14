@@ -1,3 +1,4 @@
+import { useRequestedEmployeeMonth } from '../../../hooks/useRequestedEmployeeMonth.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { useMemo, useState } from 'react';
 import { Check, Clock3, Download, Eye, FileText, Plus, Search, Upload, X } from 'lucide-react';
@@ -45,7 +46,7 @@ function fileSize(bytes) {
 }
 
 export default function LeaveRequests() {
-  const [month, setMonth] = useState(currentEmployeeMonth);
+  const [month, setMonth] = useRequestedEmployeeMonth();
   const { data, loading, error, setData } = useLoad(() => leaveService.adminLeaves(month), [month]);
   const employeesLoad = useLoad(adminService.employees, []);
   const leaves = useMemo(() => data?.data || [], [data]);

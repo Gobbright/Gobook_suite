@@ -22,3 +22,9 @@ test('salary preview sums only saved earnings and deductions without introducing
   assert.equal(result.gross, 35500); assert.equal(result.totalDeductions, 2000); assert.equal(result.net, 33500);
   assert.equal(employeeSalary({}).gross, 0);
 });
+
+test('unassigned department and designation links select employees without those fields', () => {
+  const people = [{ name: 'One', dept: '', designation: 'Sales' }, { name: 'Two', dept: 'Accounts', designation: '' }, { name: 'Three' }];
+  assert.deepEqual(filterEmployeeDirectory(people, { dept: '__unassigned__' }).map(row => row.name), ['One', 'Three']);
+  assert.deepEqual(filterEmployeeDirectory(people, { designation: '__unassigned__' }).map(row => row.name), ['Two', 'Three']);
+});

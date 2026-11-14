@@ -10,10 +10,11 @@ import { useCurrentUser } from '../../hooks/useCurrentUser.js';
 import { normalizeAppPath } from '../../routes/navigation.js';
 import { api, SERVER_ORIGIN } from '../../services/api.js';
 import { logout } from '../../services/authService.js';
+import { useOwnerEmployeeUpdates } from '../../features/employee-management/hooks/useOwnerEmployeeUpdates.js';
 
 function todayTimeLabel(date) {
   const day = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  const time = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const time = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
   return `${day} · ${time}`;
 }
 
@@ -55,6 +56,7 @@ function getPageTitle(path, sections) {
 
 export function Topbar({ onMenuClick, onOpenSearch, sidebarOpen = false }) {
   const user = useCurrentUser();
+  useOwnerEmployeeUpdates(user);
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
   const { keyboardMode, toggleKeyboardMode } = useKeyboardMode();
