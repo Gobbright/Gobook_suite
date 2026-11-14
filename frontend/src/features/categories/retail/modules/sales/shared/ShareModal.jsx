@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRequireBusinessEmail } from '../../../../../../hooks/useRequireBusinessEmail.js';
 import { X } from 'lucide-react';
 import { formatCurrency } from '../../../../../../utils/formatCurrency.js';
 import { api } from '../../../../../../services/api.js';
@@ -11,6 +12,7 @@ const WA_ICON = (
 );
 
 export function ShareModal({ doc, onClose }) {
+  const requireBusinessEmail = useRequireBusinessEmail();
   const [emailTo, setEmailTo] = useState(doc.customer?.email || '');
   const [sending, setSending] = useState(false);
   const [result, setResult]   = useState(null);
@@ -27,6 +29,7 @@ export function ShareModal({ doc, onClose }) {
   }
 
   async function handleEmail() {
+    if (!requireBusinessEmail()) return;
     if (!emailTo.trim()) return;
     setSending(true);
     setResult(null);

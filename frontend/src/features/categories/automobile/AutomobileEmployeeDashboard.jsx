@@ -1,3 +1,6 @@
+import { EmployeeUpdates } from '../../employee-management/pages/admin/EmployeeUpdates.jsx';
+import { useEmployeeRecordRefresh } from '../../employee-management/hooks/useEmployeeRecordRefresh.js';
+import { formatTime12 } from '../../../utils/timeFormat.js';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CalendarCheck, CalendarDays, ChevronLeft, ChevronRight, ClipboardCheck, Clock3, FileChartColumn, RefreshCw, ShieldCheck, UserCheck, UserPlus, UserRound, UserRoundX, Users, Wallet } from 'lucide-react';
@@ -8,6 +11,7 @@ import { attendanceForDay, attendanceTrend, departmentSummary, employeeActivitie
 import './automobileProducts.css';
 import './automobileCustomers.css';
 import './automobileEmployeeDashboard.css';
+import { EmployeeLoginDirectory } from '../../employee-management/components/common/EmployeeLoginDirectory.jsx';
 
 const root = '/employee-management';
 const colors = ['#1680ff', '#13ca95', '#ffad31', '#ff426c', '#974cff', '#bf63f2', '#8295c3'];
@@ -33,6 +37,7 @@ export function AutomobileEmployeeDashboard() {
   const today = employeeDay(new Date()); const currentYear = today.slice(0, 4);
   const [month, setMonth] = useState(today.slice(0, 7)); const [date, setDate] = useState(today); const [year, setYear] = useState(currentYear); const [department, setDepartment] = useState('');
   const [data, setData] = useState({ employees: [], attendance: [], leaves: [], payroll: [] }); const [ready, setReady] = useState({}); const [error, setError] = useState(''); const [loading, setLoading] = useState(true); const [reload, setReload] = useState(0);
+  useEmployeeRecordRefresh(() => setReload(value => value + 1));
   useEffect(() => {
     let active = true; setLoading(true); setError(''); setReady({});
     const entries = [['employees', api.hrListEmployees], ['attendance', api.hrListAttendance], ['leaves', api.hrListLeaves], ['payroll', api.hrListPayroll]];
@@ -56,7 +61,7 @@ export function AutomobileEmployeeDashboard() {
   const metric = (value, available) => loading || !available ? '—' : value;
   const yearsPicker = <Picker label="Payroll and leave year" value={year} onChange={setYear} options={years} />;
   function shiftMonth(amount) { const value = new Date(`${month}-01T00:00:00Z`); value.setUTCMonth(value.getUTCMonth() + amount); setMonth(value.toISOString().slice(0, 7)); }
-  const attendanceTable = <div className="acu-table-scroll"><table><thead><tr>{['Employee', 'Department', 'Check In', 'Check Out', 'Status'].map((label) => <th key={label}>{label}</th>)}</tr></thead><tbody>{dayAttendance.slice(0, 5).map((row) => <tr key={row._id || row.employeeId}><td><span className="aed-person"><span>{row.name?.slice(0, 1)}</span>{row.name}</span></td><td>{row.dept || '—'}</td><td>{row.checkIn || '—'}</td><td>{row.checkOut || '—'}</td><td><Badge value={row.status} /></td></tr>)}</tbody></table>{!dayAttendance.length && <Empty loading={loading} available={ready.attendance}>No attendance recorded for this date.</Empty>}</div>;
+  const attendanceTable = <div className="acu-table-scroll"><table><thead><tr>{['Employee', 'Department', 'Check In', 'Check Out', 'Status'].map((label) => <th key={label}>{label}</th>)}</tr></thead><tbody>{dayAttendance.slice(0, 5).map((row) => <tr key={row._id || row.employeeId}><td><span className="aed-person"><span>{row.name?.slice(0, 1)}</span>{row.name}</span></td><td>{row.dept || '—'}</td><td>{formatTime12(row.checkIn || '—')}</td><td>{formatTime12(row.checkOut || '—')}</td><td><Badge value={row.status} /></td></tr>)}</tbody></table>{!dayAttendance.length && <Empty loading={loading} available={ready.attendance}>No attendance recorded for this date.</Empty>}</div>;
   return <div className="acu-host aed-host"><main className="autop-page acu-page aed-page" aria-busy={loading}>
     <header className="aed-hero"><div><p className="aed-breadcrumb">Employee Management <ChevronRight size={13} /> Dashboard</p><h1>Employee Dashboard</h1><p>Overview of your team’s attendance, leave and payroll information.</p></div><button className="aed-refresh" aria-label="Refresh employee dashboard" disabled={loading} onClick={() => setReload((value) => value + 1)}><RefreshCw size={17} /></button></header>
     {error && <p className="autop-error" role="alert">{error}</p>}
@@ -80,6 +85,7 @@ export function AutomobileEmployeeDashboard() {
       <section className="acu-card aed-activities"><Title icon={ClipboardCheck}>Recent Activities</Title>{activities.map((row) => <Link key={row.id} to={row.to}><span className={`acu-icon ${row.kind === 'leave' ? 'purple' : row.kind === 'payroll' ? 'orange' : 'green'}`}><UserRound size={18} /></span><div><strong>{row.name}</strong><p>{row.text}</p><small>{new Date(row.date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</small></div></Link>)}{!activities.length && <Empty loading={loading} available={Object.values(ready).every(Boolean)}>No recent activity recorded.</Empty>}</section>
     </div>
     <section className="aed-bottom-grid"><article className="acu-card"><Title icon={UserCheck} to={`${root}/attendance`}>{date === today ? 'Today’s Attendance' : 'Attendance'} · {dateLabel(date)}</Title>{attendanceTable}<p className="aed-footnote">{availableAttendance ? `${selectedStats.notMarked} active employees unmarked` : 'Attendance summary unavailable'}</p></article><article className="acu-card"><Title icon={CalendarDays} to={`${root}/leave`}>On Leave · {dateLabel(date)}</Title><div className="acu-table-scroll"><table><thead><tr><th>Employee</th><th>Department</th><th>Leave Type</th><th>Duration</th></tr></thead><tbody>{onLeave.slice(0, 5).map((row) => <tr key={row._id}><td>{row.name}</td><td>{row.dept || '—'}</td><td>{row.type}</td><td>{row.from} – {row.to || row.from}</td></tr>)}</tbody></table>{!onLeave.length && <Empty loading={loading} available={ready.leaves}>No approved leave for this date.</Empty>}</div></article><article className="acu-card"><Title icon={ClipboardCheck} to={`${root}/leave`}>Pending Approvals</Title><div className="acu-table-scroll"><table><thead><tr><th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Status</th></tr></thead><tbody>{pending.slice(0, 5).map((row) => <tr key={row._id}><td><Link to={`${root}/leave`}>{row.name}</Link></td><td>{row.type}</td><td>{row.from}</td><td>{row.to}</td><td><Badge value={row.status} /></td></tr>)}</tbody></table>{!pending.length && <Empty loading={loading} available={ready.leaves}>No leave requests awaiting approval.</Empty>}</div><p className="aed-footnote">Leave approvals. Payroll processing is available in Quick Actions.</p></article></section>
+    <EmployeeUpdates compact /><EmployeeLoginDirectory employees={employees} loading={loading} error={ready.employees === false ? 'Employee login links could not be loaded.' : ''} onRefresh={() => setReload((value) => value + 1)} />
   </main></div>;
 }
 function presentStatusForCalendar(status) { return ['Present', 'Late', 'WFH', 'On Duty', 'Half Day'].includes(status); }

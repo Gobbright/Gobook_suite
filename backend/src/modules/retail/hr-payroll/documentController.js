@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { HRDocument } from '../../../models/Document.js';
 import { Employee } from '../../../models/Employee.js';
+import { queueEmployeeNotification } from '../../../services/employeeNotifications.js';
 import { httpError } from '../../../utils/httpError.js';
 import { deleteStoredFile, findStoredFile, hasExpectedFileSignature, pipeStoredFile, safeFilename, storeBuffer } from '../../../services/gridfsStorage.js';
 
@@ -100,6 +101,10 @@ export async function createDocument(req, res, next) {
       gridFsFileId: stored.id,
       mimeType:   file.mimetype,
     });
+    if (empId) {
+      const target = await Employee.findOne({ _id: empId, userId: req.user.id }).lean();
+      if (target) await queueEmployeeNotification(req.user.id, target, { requestKey: `document:${doc._id}`, kind: 'document', title: 'New employee document', message: `${doc.name} was added to your documents. Open My Documents in your employee portal to view it.` });
+    }
     res.status(201).json(doc);
   } catch (err) {
     next(err);

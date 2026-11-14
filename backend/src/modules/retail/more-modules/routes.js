@@ -10,6 +10,8 @@ import { createAutomation as createWAAutomation, deleteAutomation as deleteWAAut
 import { createChatbot as createWAChatbot, deleteChatbot as deleteWAChatbot, duplicateChatbot as duplicateWAChatbot, listChatbots as listWAChatbots, updateChatbot as updateWAChatbot } from './chatbotController.js';
 import { createFlow as createWAFlow, deleteFlow as deleteWAFlow, duplicateFlow as duplicateWAFlow, listFlows as listWAFlows, updateFlow as updateWAFlow } from './flowController.js';
 import { uploadExcelFile } from '../../../utils/excelImport.js';
+import { requireBusinessEmailAdmin, requireVerifiedBusinessEmail } from '../../../middleware/requireVerifiedBusinessEmail.js';
+import { createSecurityRateLimit } from '../../../middleware/securityRateLimit.js';
 
 export const moreModulesRouter = Router();
 
@@ -56,8 +58,9 @@ moreModulesRouter.delete('/whatsapp-flows/:id', deleteWAFlow);
 
 // Email Campaigns
 moreModulesRouter.get('/email-settings', getEmailSettings);
-moreModulesRouter.put('/email-settings', saveEmailSettings);
+moreModulesRouter.put('/email-settings', requireBusinessEmailAdmin, createSecurityRateLimit({ bucket: 'business-email-setup', limit: 10, windowMs: 3600000, identify: (req) => req.user.id }), saveEmailSettings);
 moreModulesRouter.post('/email-settings/test', sendEmailSettingsTest);
+moreModulesRouter.use('/email-campaigns', requireVerifiedBusinessEmail);
 moreModulesRouter.post('/email-campaigns/test', sendCampaignTest);
 moreModulesRouter.get('/email-campaigns',      listEmailCampaigns);
 moreModulesRouter.post('/email-campaigns',     createEmailCampaign);

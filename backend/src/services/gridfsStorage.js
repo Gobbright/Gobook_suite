@@ -58,6 +58,19 @@ export function pipeStoredFile(id, res) {
   return bucket().openDownloadStream(toObjectId(id)).pipe(res);
 }
 
+export async function storedFileBuffer(id, filter = {}, maxBytes = 2 * 1024 * 1024) {
+  const file = await findStoredFile(id, filter);
+  if (!file || file.length > maxBytes) return null;
+  const chunks = [];
+  let length = 0;
+  for await (const chunk of bucket().openDownloadStream(file._id)) {
+    length += chunk.length;
+    if (length > maxBytes) throw new Error('File exceeds the supported attachment size');
+    chunks.push(chunk);
+  }
+  return { buffer: Buffer.concat(chunks), contentType: file.contentType, filename: file.filename };
+}
+
 export async function deleteStoredFile(id) {
   const objectId = toObjectId(id);
   if (!objectId) return;

@@ -414,7 +414,7 @@ export function EmailMarketingPage() {
 
   function openCampaignTest() {
     if (!emailConnection.configured) {
-      setNotice('Verify Gmail before sending a campaign test email.');
+      setNotice('Verify your Google app password before sending a campaign test email.');
       setShowEmailSetup(true);
       return;
     }
@@ -756,7 +756,7 @@ export function EmailMarketingPage() {
     if (action === 'Send Test') {
       setForm((current) => ({ ...current, subject: campaign.subject ?? '', body: campaign.body ?? '' }));
       if (!emailConnection.configured) {
-        setNotice('Verify Gmail before sending a campaign test email.');
+        setNotice('Verify your Google app password before sending a campaign test email.');
         setShowEmailSetup(true);
       } else {
         setTestRecipient(emailConnection.email || '');

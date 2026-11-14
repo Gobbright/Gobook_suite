@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -210,7 +211,7 @@ export function MedicineReturnsPage() {
 
   async function processReturn() {
     if (!canProcess) {
-      window.alert('Resolve invoice, item, batch, quantity, return policy, and condition checks before processing.');
+      notify('Resolve invoice, item, batch, quantity, return policy, and condition checks before processing.');
       return;
     }
     setSaving(true);

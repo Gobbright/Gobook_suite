@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import { RecordEditDialog } from '../../../../../components/forms/RecordEditDialog.jsx';
@@ -78,8 +79,8 @@ export function GuestDocumentsPage() {
 
   async function handleDocumentAction(action, document) {
     if (action === 'Edit') setEditing(document);
-    if (action === 'View') window.alert(`${document.type}: ${document.number}`);
-    if (action === 'Download') window.alert(`${document.type} download requested.`);
+    if (action === 'View') notify(`${document.type}: ${document.number}`);
+    if (action === 'Download') notify(`${document.type} download requested.`);
     if (action === 'Delete') {
       const ok = window.confirm(`Delete ${document.type} document?`);
       if (!ok) return;
@@ -87,7 +88,7 @@ export function GuestDocumentsPage() {
         if (document.recordId) await deleteModuleRecord(document.recordId);
         setDocuments((current) => current.filter((item) => item.recordId !== document.recordId));
       } catch (err) {
-        window.alert(err.message || 'Unable to delete document.');
+        notify(err.message || 'Unable to delete document.');
       }
     }
   }

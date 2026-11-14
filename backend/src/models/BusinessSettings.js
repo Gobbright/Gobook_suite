@@ -67,8 +67,8 @@ const businessSettingsSchema = new Schema({
   city:                 { type: String, default: '' },
   state:                { type: String, default: 'Tamil Nadu' },
   pincode:              { type: String, default: '' },
-  // Hospital's own outgoing email account, used to send appointment reminders
-  // as the hospital instead of the platform's shared mailbox.
+  // Business mailbox for employee login OTPs, campaigns and appointment reminders.
+  // Verification is required before this sender can issue employee login OTPs.
   emailSmtpHost:        { type: String, default: '' },
   emailSmtpPort:        { type: Number, default: 587 },
   emailSmtpSecure:      { type: Boolean, default: false },

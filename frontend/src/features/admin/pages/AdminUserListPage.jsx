@@ -1,3 +1,4 @@
+import { notify } from '../../../services/notifications.js';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { safeNavigate } from '../../../routes/navigation.js';
@@ -105,7 +106,7 @@ export function AdminUserListPage({ type = 'all' }) {
       await updateUserSubscriptionState(row.id, mode);
       await loadData();
     } catch (err) {
-      alert(err.message || 'Unable to update subscription state');
+      notify(err.message || 'Unable to update subscription state');
     } finally {
       setActionId('');
     }

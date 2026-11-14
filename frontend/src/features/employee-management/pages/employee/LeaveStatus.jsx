@@ -6,9 +6,9 @@ import { leaveService } from '../../services/leaveService.js';
 import { currentEmployeeMonth } from '../../services/monthScope.js';
 import { MonthFilter } from '../../components/common/MonthFilter.jsx';
 
-export default function LeaveStatus() {
+export default function LeaveStatus({ history = false }) {
   const [month, setMonth] = useState(currentEmployeeMonth);
-  const { data, loading, error } = useLoad(() => leaveService.status(month), [month]);
+  const { data, loading, error } = useLoad(() => history ? leaveService.history(month) : leaveService.status(month), [month, history]);
   const columns = [
     { key: 'leaveId', label: 'Leave ID' },
     { key: 'applied', label: 'Applied Date' },
@@ -19,5 +19,5 @@ export default function LeaveStatus() {
     { key: 'reason', label: 'Reason' },
     { key: 'status', label: 'Status' },
   ];
-  return <><PageHeader title="Leave Status" subtitle="Leave requests for the selected month" action={<MonthFilter month={month} onChange={setMonth} />} />{error && <p className="error">{error}</p>}{loading ? <div className="card">Loading...</div> : <DataTable columns={columns} rows={data?.data || []} />}</>;
+  return <><PageHeader title={history ? 'Leave History' : 'Leave Status'} subtitle={history ? 'Your leave history for the selected month' : 'Leave requests for the selected month'} action={<MonthFilter month={month} onChange={setMonth} />} />{error && <p className="error">{error}</p>}{loading ? <div className="card">Loading...</div> : <DataTable columns={columns} rows={data?.data || []} />}</>;
 }

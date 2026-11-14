@@ -1,11 +1,13 @@
-import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
+import { EmployeePresenceBadge } from '../../../components/common/EmployeePresenceBadge.jsx';
+import { useEmployeeDirectoryPresence } from '../../../hooks/useEmployeeDirectoryPresence.js';
+import { BulkDeleteList, BulkDeleteItem } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { exportRows } from '../../../../../utils/exportRows.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  CalendarDays, CheckCircle2, Download, Eye, MoreVertical, Pencil, Plus, RefreshCw, Search, Upload, UserCheck,
-  Users, X,
+  CalendarDays, CheckCircle2, Download, Eye, MoreVertical, Plus, RefreshCw, Search, Upload, UserCheck,
+  Users, X, KeyRound, ArrowUpRight, Pencil, Trash2,
 } from 'lucide-react';
 
 import { useLoad } from '../../../hooks/useLoad.js';
@@ -13,6 +15,9 @@ import { adminService } from '../../../services/adminService.js';
 import { api } from '../../../../../services/api.js';
 import { EmployeeDetailsModal } from '../../../components/common/EmployeeDetailsModal.jsx';
 import { EmployeeAccessCard } from '../../../components/common/EmployeeAccessCard.jsx';
+import { EmployeePasswordDialog } from '../../../components/common/EmployeePasswordDialog.jsx';
+import { EmployeeTeamTools } from '../../../components/common/EmployeeTeamTools.jsx';
+import './employeeCards.css';
 
 const STATUSES = ['Active', 'Probation', 'On Leave', 'Inactive', 'Resigned', 'Terminated'];
 
@@ -28,30 +33,27 @@ function initials(name = '') {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || 'E';
 }
 
-function dateText(value) {
-  if (!value) return '-';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
 export default function EmployeeList() {
   const [searchParams] = useSearchParams();
   const departmentParam = searchParams.get('department') || '';
   const designationParam = searchParams.get('designation') || '';
-  const { data, loading, error, setData, reload } = useLoad(adminService.employees, []);
+  const { data, loading, error, setData, reload } = useLoad(adminService.employees, [], { keepPreviousData: true });
   const [query, setQuery] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [menu, setMenu] = useState(null);
   const [viewEmployeeId, setViewEmployeeId] = useState(null);
   const [accessEmployee, setAccessEmployee] = useState(null);
+  const [passwordEmployee, setPasswordEmployee] = useState(null);
   const [filters, setFilters] = useState({ dept: departmentParam, designation: designationParam, branch: '', manager: '', status: new Set() });
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(6);
+  const [pageSize, setPageSize] = useState(12);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState('');
+  const [deletingId, setDeletingId] = useState(null);
+  const deleteLock = useRef(false);
   const importRef = useRef(null);
   const rows = useMemo(() => data?.data || [], [data]);
+  const [presence, setPresence] = useEmployeeDirectoryPresence();
   useEffect(() => {
     setFilters((current) => ({ ...current, dept: departmentParam, designation: designationParam }));
   }, [departmentParam, designationParam]);
@@ -69,8 +71,8 @@ export default function EmployeeList() {
     const matchesStatus = filters.status.size === 0 || filters.status.has(row.status || 'Active');
     return matchesQuery
       && matchesStatus
-      && (!filters.dept || row.dept === filters.dept)
-      && (!filters.designation || row.designation === filters.designation)
+      && (!filters.dept || (filters.dept === '__unassigned__' ? !row.dept?.trim() : row.dept === filters.dept))
+      && (!filters.designation || (filters.designation === '__unassigned__' ? !row.designation?.trim() : row.designation === filters.designation))
       && (!filters.branch || row.branch === filters.branch)
       && (!filters.manager || row.reportingManager === filters.manager);
   });
@@ -120,9 +122,23 @@ export default function EmployeeList() {
   }
 
   async function deactivate(row) {
-    await adminService.updateEmployee(row._id, { name: row.name, email: row.email, status: 'Inactive' });
-    setData((current) => ({ ...current, data: (current?.data || []).map((item) => item._id === row._id ? { ...item, status: 'Inactive' } : item) }));
-    setMenu(null);
+    try {
+      await adminService.updateEmployee(row._id, { name: row.name, email: row.email, status: 'Inactive' });
+      setData((current) => ({ ...current, data: (current?.data || []).map((item) => item._id === row._id ? { ...item, status: 'Inactive' } : item) }));
+      setPresence((current) => ({ ...current, [row._id]: { online: false } }));
+      setMenu(null);
+    } catch (err) { setImportMessage(err.message || 'Unable to deactivate employee.'); }
+  }
+
+  async function removeEmployee(row) {
+    if (deleteLock.current || !window.confirm(`Delete employee "${row.name}"? This permanently removes the employee and their attendance, leave and payroll records.`)) return;
+    deleteLock.current = true; setDeletingId(row._id); setMenu(null);
+    try {
+      await adminService.deleteEmployee(row._id);
+      setData(current => ({ ...current, data: (current?.data || []).filter(item => item._id !== row._id) }));
+      reload();
+    } catch (err) { setImportMessage(err.message || 'Unable to delete employee.'); }
+    finally { deleteLock.current = false; setDeletingId(null); }
   }
 
   function toggleMenu(event, row) {
@@ -130,7 +146,7 @@ export default function EmployeeList() {
     setMenu((current) => current?.row._id === row._id ? null : {
       row,
       style: {
-        top: Math.min(rect.bottom + 8, window.innerHeight - 190),
+        top: Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 280)),
         left: Math.max(8, Math.min(rect.right - 178, window.innerWidth - 190)),
       },
     });
@@ -143,11 +159,14 @@ export default function EmployeeList() {
       if (event.target.closest?.('.hr-row-menu-portal, .hr-menu-cell')) return;
       setMenu(null);
     };
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setMenu(null); };
     document.addEventListener('mousedown', closeFromOutside);
+    document.addEventListener('keydown', closeOnEscape);
     window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
     return () => {
       document.removeEventListener('mousedown', closeFromOutside);
+      document.removeEventListener('keydown', closeOnEscape);
       window.removeEventListener('scroll', close, true);
       window.removeEventListener('resize', close);
     };
@@ -167,7 +186,9 @@ export default function EmployeeList() {
         </div>
       </div>
 
+      <EmployeeTeamTools />
       {error && <p className="error">{error}</p>}
+      <div className="hr-alert"><Link to="/employee-management/settings">Employee login settings: verify your Google app password for employee OTPs</Link></div>
       {importMessage && <p role="status" className="hr-alert">{importMessage}</p>}
 
       <div className="hr-stat-grid">
@@ -188,8 +209,8 @@ export default function EmployeeList() {
         <div className="hr-toolbar">
           <div className="hr-search"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name, ID, email or mobile..." /></div>
           <div className="hr-toolbar-actions hr-employee-filters">
-            <select aria-label="Department" className="attendance-select" value={filters.dept} onChange={(e) => setFilters((current) => ({ ...current, dept: e.target.value }))}><option value="">All Departments</option>{options.depts.map((item) => <option key={item}>{item}</option>)}</select>
-            <select aria-label="Designation" className="attendance-select" value={filters.designation} onChange={(e) => setFilters((current) => ({ ...current, designation: e.target.value }))}><option value="">All Designations</option>{options.designations.map((item) => <option key={item}>{item}</option>)}</select>
+            <select aria-label="Department" className="attendance-select" value={filters.dept} onChange={(e) => setFilters((current) => ({ ...current, dept: e.target.value }))}><option value="">All Departments</option><option value="__unassigned__">Unassigned</option>{options.depts.map((item) => <option key={item}>{item}</option>)}</select>
+            <select aria-label="Designation" className="attendance-select" value={filters.designation} onChange={(e) => setFilters((current) => ({ ...current, designation: e.target.value }))}><option value="">All Designations</option><option value="__unassigned__">Unassigned</option>{options.designations.map((item) => <option key={item}>{item}</option>)}</select>
             <select aria-label="Status" className="attendance-select" value={filters.status.size === 1 ? [...filters.status][0] : ''} onChange={(e) => setFilters((current) => ({ ...current, status: e.target.value ? new Set([e.target.value]) : new Set() }))}><option value="">All Status</option>{STATUSES.map((item) => <option key={item}>{item}</option>)}</select>
             <button className="hr-icon-btn hr-more-filters" type="button" onClick={() => setFiltersOpen(true)} title="More filters"><MoreVertical size={16} /></button>
             <button onClick={() => exportRows('Employees', filtered, ['employeeId', 'name', 'dept', 'designation', 'branch', 'reportingManager', 'joinDate', 'status'])} className="hr-icon-btn" type="button" title="Export"><Download size={16} /></button>
@@ -197,32 +218,27 @@ export default function EmployeeList() {
           </div>
         </div>
 
-        <div className="hr-table-wrap">
-          <BulkDeleteTable onDeleteRecord={record => adminService.deleteEmployee(record._id)} onDeleted={ids => reload()} className="hr-table">
-            <thead><tr><th>Employee</th><th>ID</th><th>Department</th><th>Designation</th><th>Branch</th><th>Manager</th><th>Joining Date</th><th>Status</th><th>Login URL / QR</th><th>Actions</th></tr></thead>
-            <tbody>
-              {loading ? <tr><td colSpan={10}>Loading employees...</td></tr> : null}
-              {!loading && filtered.length === 0 ? <tr><td colSpan={10}>No employees found.</td></tr> : null}
-              {visibleRows.map((row) => (
-                <BulkDeleteRow record={row} key={row._id}>
-                  <td>
-                    <div className="hr-employee-cell"><span>{initials(row.name)}</span><div><strong>{row.name}</strong><small>{row.email || '-'}<br />{row.phone || '-'}</small></div></div>
-                  </td>
-                  <td>{row.employeeId}</td><td>{row.dept || '-'}</td><td>{row.designation || '-'}</td><td>{row.branch || '-'}</td><td>{row.reportingManager || '-'}</td><td>{dateText(row.joinDate)}</td>
-                  <td><span className={statusClass(row.status || 'Active')}>{row.status || 'Active'}</span></td>
-                  <td>{row.portalAccess?.loginPath && <a href={row.portalAccess.loginPath} target="_blank" rel="noreferrer" style={{ display: 'block', maxWidth: 260, overflowWrap: 'anywhere', fontSize: 12 }}>{new URL(row.portalAccess.loginPath, window.location.origin).href}</a>}<button className="hr-btn" type="button" onClick={() => setAccessEmployee(row)}>Login Settings / QR</button></td>
-                  <td className="hr-menu-cell">
-                    <div className="hr-row-actions"><button type="button" className="hr-icon-btn" title={`View ${row.name}`} onClick={() => setViewEmployeeId(row._id)}><Eye size={16} /></button><Link className="hr-icon-btn" title={`Edit ${row.name}`} to={`/employee-management/employees/add?edit=${row._id}`}><Pencil size={15} /></Link><button className="hr-icon-btn" type="button" title="More actions" onClick={(event) => toggleMenu(event, row)}><MoreVertical size={15} /></button></div>
-                  </td>
-                </BulkDeleteRow>
-              ))}
-            </tbody>
-          </BulkDeleteTable>
-        </div>
-        <div className="hr-table-footer hr-pagination"><span>Showing {filtered.length ? (currentPage - 1) * pageSize + 1 : 0} to {Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} employees</span><div><label>Rows per page: <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}><option value="6">6</option><option value="10">10</option><option value="20">20</option></select></label><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} aria-label="Previous page">‹</button><strong>{currentPage} / {pages}</strong><button type="button" disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)} aria-label="Next page">›</button></div></div>
+        <BulkDeleteList onDeleteRecord={record => adminService.deleteEmployee(record._id)} onDeleted={reload}>
+          <div className="hr-employee-card-grid" aria-label="Employees" aria-busy={loading}>
+            {loading && rows.length === 0 && <p className="hr-employee-empty" role="status">Loading employees…</p>}
+            {!loading && filtered.length === 0 && <div className="hr-employee-empty"><Users size={28} /><h2>No employees found</h2><p>Try another search or add an employee to your team.</p></div>}
+            {visibleRows.map((row) => {
+              return <BulkDeleteItem record={row} key={row._id} className="hr-employee-card">
+                <div className="hr-employee-card-top"><EmployeePresenceBadge employee={row} presence={presence?.[row._id]} /><div className="hr-menu-cell"><button className="hr-icon-btn" type="button" aria-label={`More actions for ${row.name}`} aria-expanded={menu?.row._id === row._id} aria-haspopup="menu" onClick={(event) => toggleMenu(event, row)}><MoreVertical size={18} /></button></div></div>
+                <div className="hr-employee-card-identity"><span className="hr-employee-avatar">{initials(row.name)}</span><div><h2>{row.name}</h2><p>{row.designation || 'Employee'}</p><span className="hr-employee-code">{row.employeeId}</span></div></div>
+                <dl className="hr-employee-card-facts"><div><dt>Department</dt><dd>{row.dept || '—'}</dd></div><div><dt>Shift</dt><dd>{row.shift || 'Not assigned'}</dd></div></dl>
+                <div className="hr-employee-card-contact"><span>{row.email || 'No email added'}</span><span>{row.phone || 'No phone added'}</span></div>
+                <div className="hr-employee-card-actions"><button type="button" className="hr-btn hr-employee-view" onClick={() => setViewEmployeeId(row._id)}><Eye size={16} />View details<ArrowUpRight size={14} /></button><button type="button" className="hr-btn hr-employee-password" aria-label={`Set password for ${row.name}`} onClick={() => setPasswordEmployee(row)}><KeyRound size={16} />Set password</button></div>
+                <div className="hr-employee-card-secondary-actions"><Link to={`/employee-management/employees/add?edit=${row._id}`} aria-label={`Edit ${row.name}`}><Pencil size={14} />Edit</Link><button type="button" aria-label={`Delete ${row.name}`} disabled={Boolean(deletingId)} onClick={() => removeEmployee(row)}><Trash2 size={14} />{deletingId === row._id ? 'Deleting…' : 'Delete'}</button></div>
+              </BulkDeleteItem>;
+            })}
+          </div>
+        </BulkDeleteList>
+        <div className="hr-table-footer hr-pagination"><span>Showing {filtered.length ? (currentPage - 1) * pageSize + 1 : 0} to {Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} employees</span><div><label>Cards per page: <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}><option value="12">12</option><option value="24">24</option><option value="48">48</option></select></label><button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} aria-label="Previous page">‹</button><strong>{currentPage} / {pages}</strong><button type="button" disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)} aria-label="Next page">›</button></div></div>
       </section>
 
       {viewEmployeeId && <EmployeeDetailsModal employeeId={viewEmployeeId} onClose={() => { setViewEmployeeId(null); reload(); }} />}
+      {passwordEmployee && <EmployeePasswordDialog employee={passwordEmployee} onClose={() => setPasswordEmployee(null)} onUpdated={() => { reload(); setPresence((current) => ({ ...current, [passwordEmployee._id]: { online: false } })); }} />}
       {accessEmployee && <div className="employee-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAccessEmployee(null); }}><div className="employee-access-dialog" role="dialog" aria-modal="true" aria-label="Employee login settings"><button className="hr-icon-btn" type="button" aria-label="Close login settings" onClick={() => setAccessEmployee(null)}><X size={18} /></button><EmployeeAccessCard employee={accessEmployee} onUpdated={reload} /></div></div>}
       {filtersOpen && (
         <aside className="hr-filter-panel">
@@ -241,11 +257,14 @@ export default function EmployeeList() {
       )}
 
       {menu && createPortal(
-        <div className="hr-row-menu hr-row-menu-portal" style={menu.style}>
-          <button type="button" onClick={() => { setViewEmployeeId(menu.row._id); setMenu(null); }}>View Profile</button>
+        <div className="hr-row-menu hr-row-menu-portal" style={menu.style} role="menu" aria-label={`Actions for ${menu.row.name}`}>
+          <button type="button" role="menuitem" onClick={() => { setViewEmployeeId(menu.row._id); setMenu(null); }}>View details</button>
+          <button type="button" role="menuitem" onClick={() => { setPasswordEmployee(menu.row); setMenu(null); }}>{menu.row.portalAccess?.passwordConfigured || menu.row.loginAccess ? 'Reset password' : 'Set password'}</button>
+          <button type="button" role="menuitem" onClick={() => { setAccessEmployee(menu.row); setMenu(null); }}>Login settings / QR</button>
           <Link to={`/employee-management/employees/${menu.row._id}/documents`} onClick={() => setMenu(null)}>Documents</Link>
           <Link to={`/employee-management/employees/add?edit=${menu.row._id}`} onClick={() => setMenu(null)}>Edit</Link>
           <button type="button" onClick={() => deactivate(menu.row)} disabled={(menu.row.status || 'Active') === 'Inactive'}>Deactivate</button>
+          <button type="button" role="menuitem" disabled={Boolean(deletingId)} onClick={() => removeEmployee(menu.row)}>Delete employee</button>
         </div>,
         document.body,
       )}

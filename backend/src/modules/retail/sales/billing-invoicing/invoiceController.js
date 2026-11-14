@@ -10,7 +10,8 @@ import { createSalesReturn, updateSalesReturn, deleteSalesReturn } from '../sale
 import { Payment } from '../../../../models/Payment.js';
 import { Types } from 'mongoose';
 import { httpError } from '../../../../utils/httpError.js';
-import { GOBOOK_LOGO_CID, sendMail } from '../../../../utils/mailer.js';
+import { GOBOOK_LOGO_CID, buildSmtpOverride, sendMail } from '../../../../utils/mailer.js';
+import { businessEmailSettings, isBusinessEmailVerified } from '../../../../services/businessEmail.js';
 import { buildSalesAggregationPipeline, escapeRegex, isBillableDocType, paymentStatusStages, unwrapFacetResult } from '../shared/salesFilters.js';
 import { postInventoryForDocument, reverseInventoryForDocument } from '../../../../services/inventoryMovements.js';
 import {
@@ -389,6 +390,8 @@ async function deleteInvoiceHandler(req, res, next) {
 // POST /api/sales/invoices/:id/send-email
 export async function sendInvoiceEmail(req, res, next) {
   try {
+    const sender = req.businessEmailSettings || await businessEmailSettings(req.user);
+    if (!isBusinessEmailVerified(sender)) return next(httpError(403, 'Verify your Google app password before sending email.'));
     const invoice = await Invoice.findOne(await branchScopedQuery(req, { model: Invoice, ownerField: 'userId' }, { _id: req.params.id })).lean();
     if (!invoice) return next(httpError(404, 'Invoice not found'));
 
@@ -601,7 +604,7 @@ export async function sendInvoiceEmail(req, res, next) {
       ? [{ filename: `${docLabel}-${invoice.number}.pdf`, content: Buffer.from(pdfBase64, 'base64'), contentType: 'application/pdf' }]
       : [];
 
-    await sendMail({ to: toEmail, subject: `${docLabel} #${invoice.number} from ${biz.businessName || 'GoBooks Enterprises'}`, html, attachments });
+    await sendMail({ to: toEmail, subject: `${docLabel} #${invoice.number} from ${biz.businessName || 'GoBooks Enterprises'}`, html, attachments, smtp: buildSmtpOverride(sender, biz.businessName) });
     res.json({ message: 'Email sent successfully' });
   } catch (err) {
     next(err);

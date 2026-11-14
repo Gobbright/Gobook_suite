@@ -1,3 +1,4 @@
+import { notify } from '../../../services/notifications.js';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Clock3, Link2, Plus, Search, Siren, UserRound } from 'lucide-react';
@@ -169,11 +170,11 @@ export function EmergencyRegistrationPage() {
   async function registerEmergency() {
     const isUnknown = normalize(form.name) === 'unknown';
     if (!isUnknown && !form.name.trim()) {
-      window.alert('Patient name is required. Use UNKNOWN for unidentified or unconscious patients.');
+      notify('Patient name is required. Use UNKNOWN for unidentified or unconscious patients.');
       return;
     }
     if (!form.chiefComplaint.trim()) {
-      window.alert('Chief complaint is required for triage.');
+      notify('Chief complaint is required for triage.');
       return;
     }
 

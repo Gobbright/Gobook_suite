@@ -1,3 +1,5 @@
+import { useRequestedEmployeeMonth } from '../../../hooks/useRequestedEmployeeMonth.js';
+import { EmployeeReportButtons } from '../../../components/common/EmployeeReportButtons.jsx';
 import { useMemo, useState } from 'react';
 import { Download, Search } from 'lucide-react';
 
@@ -31,7 +33,7 @@ function code(status) {
 }
 
 export default function MonthlyAttendance() {
-  const [month, setMonth] = useState(localMonth);
+  const [month, setMonth] = useRequestedEmployeeMonth();
   const [dept, setDept] = useState('');
   const [query, setQuery] = useState('');
   const [message, setMessage] = useState('');
@@ -80,6 +82,7 @@ export default function MonthlyAttendance() {
         <div className="hr-actions"><button className="hr-btn" type="button" onClick={exportRegister}><Download size={14} /> Export</button></div>
       </div>
       <AttendanceNav current="/employee-management/attendance/monthly" />
+      <EmployeeReportButtons kind="attendance" month={month} department={dept} />
       {error && <p className="error">{error}</p>}
       {message && <p className="leave-success-message">{message}</p>}
       <section className="hr-card">

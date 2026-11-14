@@ -55,6 +55,7 @@ import {
 } from './documentController.js';
 import { uploadExcelFile } from '../../../utils/excelImport.js';
 import { httpError } from '../../../utils/httpError.js';
+import { requireVerifiedBusinessEmail } from '../../../middleware/requireVerifiedBusinessEmail.js';
 
 export const hrPayrollRouter = Router();
 hrPayrollRouter.use((req, _res, next) => {
@@ -67,8 +68,8 @@ hrPayrollRouter.get('/employees/stats',       getEmployeeStats);
 hrPayrollRouter.get('/employees/departments', getDepartments);
 hrPayrollRouter.get('/employees',             listEmployees);
 hrPayrollRouter.get('/employees/:id',         getEmployee);
-hrPayrollRouter.post('/employees/import',     uploadExcelFile.single('file'), importEmployees);
-hrPayrollRouter.post('/employees',            createEmployee);
+hrPayrollRouter.post('/employees/import',     requireVerifiedBusinessEmail, uploadExcelFile.single('file'), importEmployees);
+hrPayrollRouter.post('/employees',            requireVerifiedBusinessEmail, createEmployee);
 hrPayrollRouter.put('/employees/:id',         updateEmployee);
 hrPayrollRouter.delete('/employees/:id',      deleteEmployee);
 

@@ -1,3 +1,4 @@
+import { notify } from '../../services/notifications.js';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { downloadReportTablePdf } from '../../services/reportDownloadService.js';
 import {
@@ -371,7 +372,7 @@ export function LegalPage({ type }) {
       ['Introduction', document.intro],
       ...(document.notice ? [['Notice', document.notice]] : []),
       ...document.sections.map((section) => [section.heading, [section.body, ...(section.bullets || [])].filter(Boolean).join('\n')]),
-    ], { subtitle: `Effective Date: ${EFFECTIVE_DATE} | Last Updated: ${EFFECTIVE_DATE} | Version 1.0` }).catch((error) => window.alert(error.message || 'Unable to download PDF.'));
+    ], { subtitle: `Effective Date: ${EFFECTIVE_DATE} | Last Updated: ${EFFECTIVE_DATE} | Version 1.0` }).catch((error) => notify(error.message || 'Unable to download PDF.'));
   }
 
   function handlePrint() {

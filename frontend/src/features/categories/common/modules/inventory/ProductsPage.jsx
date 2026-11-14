@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
 import { AutomobileProductsPage } from '../../../automobile/AutomobileProductsPage.jsx';
 import { useAutomobileListingLayout } from '../../../../../hooks/useAutomobileListingLayout.js';
@@ -6127,7 +6128,7 @@ function ProductManagementPage({ initialItemType = 'All Items', lockedItemType =
         loadProducts();
       }
     } catch {
-      alert('Failed to delete product');
+      notify('Failed to delete product');
     }
   }
 
@@ -6151,7 +6152,7 @@ function ProductManagementPage({ initialItemType = 'All Items', lockedItemType =
     }
     if (value !== 'delete') return;
     if (!selectedProductIds.length) {
-      alert('Select at least one product');
+      notify('Select at least one product');
       setBulkAction('');
       return;
     }
@@ -6170,7 +6171,7 @@ function ProductManagementPage({ initialItemType = 'All Items', lockedItemType =
       if (page > nextTotalPages) setPage(nextTotalPages);
       else loadProducts();
     } catch {
-      alert('Failed to delete selected products');
+      notify('Failed to delete selected products');
     } finally {
       setBulkDeleting(false);
     }

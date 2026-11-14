@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireVerifiedBusinessEmail } from '../../middleware/requireVerifiedBusinessEmail.js';
 
 import { createBranch, deleteBranch, listBranches, updateBranch } from './branchController.js';
 import {
@@ -23,7 +24,7 @@ settingsRouter.post('/logo',      logoUpload.single('logo'), uploadLogo);
 settingsRouter.delete('/logo',    removeLogo);
 settingsRouter.post('/payment-qr', paymentQrUpload.single('paymentQr'), uploadPaymentQr);
 settingsRouter.delete('/payment-qr', removePaymentQr);
-settingsRouter.post('/test-email', sendTestEmail);
+settingsRouter.post('/test-email', requireVerifiedBusinessEmail, sendTestEmail);
 
 // Branches
 settingsRouter.get('/branches',      listBranches);

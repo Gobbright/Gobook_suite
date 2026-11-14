@@ -10,6 +10,7 @@ const payrollSchema = new Schema({
   allowances:  { type: Number, default: 0 },
   deductions:  { type: Number, default: 0 },
   net:         { type: Number, default: 0 },
+  salaryStructure: { type: new Schema(Object.fromEntries(['hra', 'specialAllowance', 'conveyanceAllowance', 'medicalAllowance', 'otherAllowances', 'pf', 'esi', 'professionalTax', 'tds', 'otherDeduction', 'loanDeduction'].map((key) => [key, { type: Number, min: 0 }])), { _id: false }), default: undefined },
   status:      { type: String, enum: ['Paid', 'Pending'], default: 'Pending' },
 }, { timestamps: true });
 

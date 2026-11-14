@@ -7,6 +7,8 @@ import { api } from '../../../../../services/api.js';
 import { API_BASE_URL, SERVER_ORIGIN } from '../../../../../services/apiBase.js';
 import { getToken } from '../../../../../services/authToken.js';
 import { PasswordInput } from '../../../components/common/PasswordInput.jsx';
+import { DEFAULT_QR_FIELDS, QR_DISPLAY_FIELDS } from '../../../services/employeeQr.js';
+import { STATUTORY_FIELDS, BANK_FIELDS, SALARY_FIELDS, emptyFamilyMember } from '../../../services/employeeDetails.js';
 
 const STEPS = ['Personal', 'Employment', 'Payroll', 'Documents', 'Review'];
 const DOCUMENT_CATEGORIES = ['ID Proof', 'Address Proof', 'Certificates', 'Contracts', 'Other Documents'];
@@ -17,6 +19,9 @@ const initial = {
   address: '', emergencyName: '', emergencyRelationship: '', emergencyPhone: '',
   department: '', designation: '', branch: '', reportingManager: '', joiningDate: '', employmentType: 'Full Time',
   shift: 'General Shift', workLocation: 'Office', basicSalary: '', password: '', loginAccess: false, status: 'Active', role: 'employee',
+  qrDisplayFields: { ...DEFAULT_QR_FIELDS },
+  maritalStatus: '', nationality: '', qualification: '', permanentAddress: '',
+  familyMembers: [], statutoryDetails: {}, bankDetails: {}, salaryStructure: {},
 };
 
 function Field({ label, required, children }) {
@@ -50,6 +55,11 @@ function employeeToForm(employee) {
     loginAccess: Boolean(employee?.loginAccess),
     status: employee?.status || 'Active',
     role: employee?.employeeRole || 'employee',
+    qrDisplayFields: { ...DEFAULT_QR_FIELDS, ...employee?.qrDisplayFields },
+    maritalStatus: employee?.maritalStatus || '', nationality: employee?.nationality || '',
+    qualification: employee?.qualification || '', permanentAddress: employee?.permanentAddress || '',
+    familyMembers: employee?.familyMembers || [], statutoryDetails: employee?.statutoryDetails || {},
+    bankDetails: employee?.bankDetails || {}, salaryStructure: employee?.salaryStructure || {},
   };
 }
 
@@ -73,6 +83,10 @@ export default function AddEmployee() {
   }
 
   function choosePhoto(file) {
+    if (file && (!['image/jpeg', 'image/png'].includes(file.type) || file.size > 2 * 1024 * 1024)) {
+      setError('Choose a JPG or PNG photo up to 2 MB');
+      return;
+    }
     setPhoto(file || null);
     if (photoPreview) URL.revokeObjectURL(photoPreview);
     setPhotoPreview(file ? URL.createObjectURL(file) : '');
@@ -115,7 +129,13 @@ export default function AddEmployee() {
       if (!form.name.trim()) return 'Full name is required';
       if (!form.mobileNumber.trim()) return 'Mobile number is required';
       if (!form.email.trim()) return 'Email address is required';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return 'Enter a valid email address';
+      if (form.familyMembers.some((member) => !member.name.trim() || !member.relationship.trim())) return 'Enter a name and relationship for every family member';
+      if (form.familyMembers.some((member) => member.isEmergencyContact && !member.phone.trim())) return 'Enter a mobile number for emergency family contacts';
     }
+    if (stepIndex === 1 && form.loginAccess && !isEdit && !form.password) return 'Set a password to enable employee login';
+    if (stepIndex === 1 && form.password && form.password.length < 8) return 'Employee password needs at least 8 characters';
+    if (stepIndex === 2 && [form.basicSalary, ...Object.values(form.salaryStructure)].some((value) => value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0))) return 'Salary amounts must be zero or greater';
     return '';
   }
 
@@ -125,7 +145,7 @@ export default function AddEmployee() {
       setStep(nextStep);
       return;
     }
-    const stepError = validateStep(step);
+    const stepError = Array.from({ length: nextStep }, (_, index) => validateStep(index)).find(Boolean);
     if (stepError) {
       setError(stepError);
       return;
@@ -141,9 +161,10 @@ export default function AddEmployee() {
   async function submit(event) {
     event.preventDefault();
     setError('');
-    const firstStepError = validateStep(0);
+    const invalidStep = [0, 1, 2].find((index) => validateStep(index));
+    const firstStepError = invalidStep === undefined ? '' : validateStep(invalidStep);
     if (firstStepError) {
-      setStep(0);
+      setStep(invalidStep);
       return setError(firstStepError);
     }
     setSaving(true);
@@ -157,7 +178,12 @@ export default function AddEmployee() {
       if (!payload.password) delete payload.password;
       let savedEmployee = null;
       if (isEdit) {
-        savedEmployee = await adminService.updateEmployee(editId, payload);
+        if (photo) {
+          const formData = new FormData();
+          Object.entries(payload).forEach(([key, value]) => formData.append(key, typeof value === 'object' ? JSON.stringify(value) : value));
+          formData.append('photo', photo);
+          savedEmployee = await adminService.updateEmployeeWithPhoto(editId, formData);
+        } else savedEmployee = await adminService.updateEmployee(editId, payload);
       } else if (photo) {
         const formData = new FormData();
         Object.entries(payload).forEach(([key, value]) => {
@@ -170,7 +196,7 @@ export default function AddEmployee() {
       }
       const employeeId = savedEmployee?._id || editId;
       if (employeeId) await uploadQueuedDocuments(employeeId, savedEmployee?.name || form.name);
-      navigate('/employee-management/employees');
+      navigate('/employee-management/employees', { state: { savedEmployeeId: String(employeeId || ''), savedEmployeeName: savedEmployee?.name || form.name } });
     } catch (err) {
       setError(err.message || 'Unable to save employee');
     } finally {
@@ -216,7 +242,7 @@ export default function AddEmployee() {
       <div className="hr-breadcrumb"><Link to="/employee-management/employees"><ArrowLeft size={15} /> Employees</Link><span>/</span><strong>{isEdit ? 'Edit Employee' : 'Add Employee'}</strong></div>
       <div className="hr-page-head">
         <div><h1>{isEdit ? 'Edit Employee' : 'Add New Employee'}</h1><p>{isEdit ? 'Update employee profile and employment details' : 'Create employee profile and configure employment details'}</p></div>
-        <div className="hr-actions"><button className="app-save-button hr-btn" type="button">Save</button><button className="hr-btn primary" disabled={saving || loadingEmployee}>{saving ? 'Saving...' : isEdit ? 'Update Employee' : 'Submit Employee'}</button></div>
+        <div className="hr-actions"><button className="app-save-button hr-btn primary" disabled={saving || loadingEmployee}>{saving ? 'Saving...' : isEdit ? 'Update Employee' : 'Submit Employee'}</button></div>
       </div>
       {error && <p className="error">{error}</p>}
       {loadingEmployee && <p className="muted">Loading employee details...</p>}
@@ -243,7 +269,26 @@ export default function AddEmployee() {
                 <Field label="Mobile" required><input value={form.mobileNumber} onChange={(e) => set('mobileNumber', e.target.value)} placeholder="Enter mobile number" /></Field>
                 <Field label="Email" required><input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="Enter email address" /></Field>
                 <Field label="Address"><textarea value={form.address} onChange={(e) => set('address', e.target.value)} placeholder="Enter full address" /></Field>
+                <Field label="Marital Status"><select value={form.maritalStatus} onChange={(e) => set('maritalStatus', e.target.value)}><option value="">Select status</option>{['Single', 'Married', 'Divorced', 'Widowed', 'Prefer not to say'].map((value) => <option key={value}>{value}</option>)}</select></Field>
+                <Field label="Nationality"><input value={form.nationality} onChange={(e) => set('nationality', e.target.value)} /></Field>
+                <Field label="Qualification"><input value={form.qualification} onChange={(e) => set('qualification', e.target.value)} /></Field>
+                <Field label="Permanent Address"><textarea value={form.permanentAddress} onChange={(e) => set('permanentAddress', e.target.value)} /></Field>
               </div>
+              <div className="hr-doc-step-head"><h3>Family Members</h3><button className="hr-btn soft" type="button" disabled={form.familyMembers.length >= 20} onClick={() => set('familyMembers', [...form.familyMembers, emptyFamilyMember()])}><Plus size={14} />Add Family Member</button></div>
+              <div className="hr-document-form-list">{form.familyMembers.map((member, index) => {
+                const updateMember = (key, value) => set('familyMembers', form.familyMembers.map((row, rowIndex) => rowIndex === index ? { ...row, [key]: value } : row));
+                return <section className="hr-document-form-card" key={index}>
+                  <div className="hr-document-form-title"><strong>Family member {index + 1}</strong><button className="hr-icon-btn danger" type="button" aria-label={`Remove family member ${index + 1}`} onClick={() => set('familyMembers', form.familyMembers.filter((_, rowIndex) => rowIndex !== index))}><Trash2 size={14} /></button></div>
+                  <div className="hr-form-grid">
+                    <Field label="Family Member Name" required><input value={member.name} onChange={(e) => updateMember('name', e.target.value)} /></Field>
+                    <Field label="Relationship" required><input value={member.relationship} onChange={(e) => updateMember('relationship', e.target.value)} placeholder="Mother, father, spouse, child..." /></Field>
+                    <Field label="Family Mobile"><input type="tel" value={member.phone} onChange={(e) => updateMember('phone', e.target.value)} /></Field>
+                    <Field label="Family Date of Birth"><input type="date" value={member.dateOfBirth} onChange={(e) => updateMember('dateOfBirth', e.target.value)} /></Field>
+                    <Field label="Occupation"><input value={member.occupation} onChange={(e) => updateMember('occupation', e.target.value)} /></Field>
+                    <Field label="Use as Emergency Contact"><input type="checkbox" checked={member.isEmergencyContact} onChange={(e) => updateMember('isEmergencyContact', e.target.checked)} /></Field>
+                  </div>
+                </section>;
+              })}</div>
               <h3>Emergency Contact</h3>
               <div className="hr-form-grid three">
                 <Field label="Name"><input value={form.emergencyName} onChange={(e) => set('emergencyName', e.target.value)} placeholder="Enter name" /></Field>
@@ -262,9 +307,9 @@ export default function AddEmployee() {
                 <Field label="Reporting Manager"><input value={form.reportingManager} onChange={(e) => set('reportingManager', e.target.value)} placeholder="Manager name" /></Field>
                 <Field label="Joining Date"><input type="date" value={form.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} /></Field>
                 <Field label="Employment Type"><select value={form.employmentType} onChange={(e) => set('employmentType', e.target.value)}>{['Full Time', 'Part Time', 'Contract', 'Intern', 'Temporary', 'Consultant'].map((v) => <option key={v}>{v}</option>)}</select></Field>
-                <Field label="Shift"><input value={form.shift} onChange={(e) => set('shift', e.target.value)} /></Field>
+                <Field label="Shift"><input list="employee-shift-options" value={form.shift} onChange={(e) => set('shift', e.target.value)} placeholder="Select or enter a shift" /><datalist id="employee-shift-options"><option value="General Shift" /><option value="Day Shift" /><option value="Night Shift" /><option value="Rotational Shift" /><option value="6-Day Shift" /></datalist></Field>
                 <Field label="Work Location"><input value={form.workLocation} onChange={(e) => set('workLocation', e.target.value)} /></Field>
-                <Field label="Enable Employee Password Login"><input type="checkbox" checked={form.loginAccess} onChange={(e) => set('loginAccess', e.target.checked)} /></Field>
+                <Field label="Enable Employee Login (Password + Email OTP)"><input type="checkbox" checked={form.loginAccess} onChange={(e) => set('loginAccess', e.target.checked)} /></Field>
                 <Field label={isEdit ? 'Set New Employee Password' : 'Employee Password'}><PasswordInput autoComplete="new-password" minLength={8} maxLength={72} value={form.password} onChange={(e) => set('password', e.target.value)} placeholder={isEdit ? 'Leave blank to keep existing password' : 'Set at least 8 characters'} /></Field>
               </div>
             </>
@@ -275,7 +320,10 @@ export default function AddEmployee() {
               <div className="hr-form-grid">
                 <Field label="Monthly Basic Salary"><input type="number" min="0" value={form.basicSalary} onChange={(e) => set('basicSalary', e.target.value)} /></Field>
                 <Field label="Status"><select value={form.status} onChange={(e) => set('status', e.target.value)}>{['Active', 'Probation', 'On Leave', 'Inactive', 'Resigned', 'Terminated'].map((v) => <option key={v}>{v}</option>)}</select></Field>
+                {SALARY_FIELDS.map(([key, label]) => <Field label={label} key={key}><input type="number" min="0" step="0.01" placeholder="Default" value={form.salaryStructure[key] ?? ''} onChange={(e) => set('salaryStructure', { ...form.salaryStructure, [key]: e.target.value })} /></Field>)}
               </div>
+              <h3>PF &amp; ESI Details</h3><div className="hr-form-grid">{STATUTORY_FIELDS.map(([key, label]) => <Field key={key} label={label}><input value={form.statutoryDetails[key] || ''} onChange={(e) => set('statutoryDetails', { ...form.statutoryDetails, [key]: e.target.value })} /></Field>)}</div>
+              <h3>Salary Bank Account</h3><div className="hr-form-grid">{BANK_FIELDS.map(([key, label]) => <Field key={key} label={label}><input value={form.bankDetails[key] || ''} onChange={(e) => set('bankDetails', { ...form.bankDetails, [key]: e.target.value })} /></Field>)}</div>
             </>
           )}
           {step === 3 && (
@@ -316,7 +364,7 @@ export default function AddEmployee() {
               </div>
             </>
           )}
-          {step === 4 && <div className="hr-review"><h2>Review</h2>{[['Name', form.name], ['Email', form.email], ['Department', form.department], ['Designation', form.designation], ['Branch', form.branch], ['Employment Type', form.employmentType], ['Status', form.status]].map(([k, v]) => <p key={k}><span>{k}</span><strong>{v || '-'}</strong></p>)}</div>}
+          {step === 4 && <div className="hr-review"><h2>Review</h2>{[['Name', form.name], ['Email', form.email], ['Department', form.department], ['Designation', form.designation], ['Branch', form.branch], ['Employment Type', form.employmentType], ['Status', form.status]].map(([k, v]) => <p key={k}><span>{k}</span><strong>{v || '-'}</strong></p>)}<section className="employee-qr-display-settings"><h3>Details visible on this employee's QR</h3><p>Choose what appears on the downloaded QR card and its scan page.</p><fieldset><legend className="sr-only">Employee QR details</legend>{QR_DISPLAY_FIELDS.map(([key, label]) => <label key={key}><input type="checkbox" checked={Boolean(form.qrDisplayFields[key])} onChange={(event) => setForm((current) => ({ ...current, qrDisplayFields: { ...current.qrDisplayFields, [key]: event.target.checked } }))} />{label}</label>)}</fieldset></section></div>}
 
           <div className="hr-form-actions">
             <button className="hr-btn" type="button" disabled={step === 0} onClick={() => goToStep(step - 1)}>
@@ -325,7 +373,7 @@ export default function AddEmployee() {
             </button>
             {step < STEPS.length - 1 ? (
               <button className="app-save-button hr-btn primary" type="button" onClick={goNext}>
-                <span className="hr-desktop-action-label">Save</span>
+                <span className="hr-desktop-action-label">Next</span>
                 <span className="hr-mobile-action-label">Next</span>
 
               </button>

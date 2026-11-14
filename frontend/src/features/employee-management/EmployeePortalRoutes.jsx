@@ -17,6 +17,8 @@ import Holidays from './pages/employee/Holidays.jsx';
 import MyProfile from './pages/employee/MyProfile.jsx';
 import Documents from './pages/employee/Documents.jsx';
 import Permissions from './pages/employee/Permissions.jsx';
+import Notifications from './pages/employee/Notifications.jsx';
+import WorkManagement from './pages/employee/WorkManagement.jsx';
 
 function EmployeeShell({ children }) {
   return (
@@ -55,6 +57,8 @@ function EmployeeScreens() {
     <Route path="payslips" element={<Payslips />} />
     <Route path="holidays" element={<Holidays />} />
     <Route path="profile" element={<MyProfile />} />
+    <Route path="notifications" element={<Notifications />} />
+    <Route path="work" element={<WorkManagement />} />
     <Route path="documents" element={<Documents />} />
     <Route path="permissions" element={<Permissions />} />
     <Route path="*" element={<Navigate to={employeeScreenPath(user)} replace />} />

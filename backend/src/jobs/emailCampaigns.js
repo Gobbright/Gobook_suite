@@ -1,7 +1,7 @@
 import { AppUser } from '../models/AppUser.js';
-import { BusinessSettings } from '../models/BusinessSettings.js';
 import { EmailCampaign } from '../models/EmailCampaign.js';
 import { buildBrandedEmail, buildSmtpOverride, escapeHtml, sendMail, textToEmailHtml } from '../utils/mailer.js';
+import { businessEmailSettings } from '../services/businessEmail.js';
 
 function getCampaignEmailHtml({ subject, body, businessName }) {
   const safeBusinessName = businessName || 'GoBooks';
@@ -72,10 +72,8 @@ export async function runScheduledCampaigns() {
 
   for (const campaign of due) {
     try {
-      const [user, settings] = await Promise.all([
-        AppUser.findById(campaign.userId).lean(),
-        BusinessSettings.findOne({ userId: campaign.userId }).select('+emailSmtpPass'),
-      ]);
+      const user = await AppUser.findById(campaign.userId).lean();
+      const settings = user ? await businessEmailSettings({ ...user, id: user._id }) : null;
       await dispatchCampaign(campaign, settings, user?.businessName);
     } catch (err) {
       console.error('[email-campaigns] failed to dispatch', campaign._id.toString(), err.message);

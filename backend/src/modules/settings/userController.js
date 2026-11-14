@@ -4,6 +4,7 @@ import { AppUser } from '../../models/AppUser.js';
 import { httpError } from '../../utils/httpError.js';
 import { buildBrandedEmail, buildSmtpOverride, escapeHtml, sendMail } from '../../utils/mailer.js';
 import { isBusinessSuperAdmin } from '../../utils/tenantScope.js';
+import { businessEmailSettings, isBusinessEmailVerified } from '../../services/businessEmail.js';
 
 const SALT_ROUNDS = 10;
 const USER_WRITE_FIELDS = ['name', 'email', 'role', 'branch', 'phone', 'status', 'businessName'];
@@ -224,6 +225,8 @@ export async function createUser(req, res, next) {
     let credentialsEmailSent = false;
     let credentialsEmailError = '';
     try {
+      const sender = await businessEmailSettings(actor);
+      if (!isBusinessEmailVerified(sender)) throw httpError(403, 'Verify your Google app password before sending user login details.');
       await sendMail({
         to: user.email,
         subject: 'Your GoBooks account login details',
@@ -233,7 +236,7 @@ export async function createUser(req, res, next) {
           businessName: payload.businessName,
           actorName: actor.name || actor.email,
         }),
-        smtp: buildSmtpOverride(owner, payload.businessName),
+        smtp: buildSmtpOverride(sender, payload.businessName),
       });
       credentialsEmailSent = true;
     } catch (mailErr) {

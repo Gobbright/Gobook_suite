@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireVerifiedBusinessEmail } from '../../../middleware/requireVerifiedBusinessEmail.js';
 import { transitionInvoice, transitionSalesReturn } from './billing-invoicing/lifecycleController.js';
 import { transitionChallan, convertChallan } from './delivery-challan/challanWorkflow.js';
 import {
@@ -107,7 +108,7 @@ salesRouter.post('/invoices',             createInvoice);
 salesRouter.get('/invoices/:id',          getInvoice);
 salesRouter.put('/invoices/:id',          updateInvoice);
 salesRouter.delete('/invoices/:id',       deleteInvoice);
-salesRouter.post('/invoices/:id/send-email',  sendInvoiceEmail);
+salesRouter.post('/invoices/:id/send-email',  requireVerifiedBusinessEmail, sendInvoiceEmail);
 salesRouter.get('/invoices/:id/payments',     listPayments);
 salesRouter.post('/invoices/:id/payments',    recordPayment);
 salesRouter.delete('/payments/:id',           deletePayment);

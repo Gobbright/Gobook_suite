@@ -1,5 +1,9 @@
+import { EmployeeUpdates } from './EmployeeUpdates.jsx';
 import {
   ArrowRight,
+  ChevronRight,
+  KeyRound,
+  Mail,
   CalendarCheck,
   ClipboardCheck,
   Clock3,
@@ -21,6 +25,7 @@ import { adminService } from '../../services/adminService.js';
 import { payrollService } from '../../services/payrollService.js';
 import { attendanceService } from '../../services/attendanceService.js';
 import { payrollMonth } from './payroll/PayrollNav.jsx';
+import { EmployeeLoginDirectory } from '../../components/common/EmployeeLoginDirectory.jsx';
 
 function initials(name = '') {
   return name
@@ -138,6 +143,7 @@ export default function Dashboard() {
       />
 
       {error && <p className="error">{error}</p>}
+      <div className="employee-dashboard-setup"><Mail size={18} aria-hidden="true" /><span>Manage the business email used for employee sign-in codes.</span><Link to="/employee-management/settings">Email settings<ArrowRight size={14} /></Link></div>
 
       <div className="grid stats dashboard-stats">
         <StatCard label="Total Employees" value={stats.employees || 0} detail={`${activeEmployees} active`} icon={Users} tone="blue" loading={loading} />
@@ -238,6 +244,11 @@ export default function Dashboard() {
           </Link>
         ))}
       </section>
+      <EmployeeUpdates compact />
+      <details className="employee-dashboard-access">
+        <summary><KeyRound size={21} aria-hidden="true" /><span><strong>Employee access &amp; QR cards</strong><small>Personal login links, email verification and QR settings</small></span><ChevronRight size={18} aria-hidden="true" /></summary>
+        <EmployeeLoginDirectory employees={allEmployees} loading={employeeLoad.loading} error={employeeLoad.error} onRefresh={employeeLoad.reload} />
+      </details>
     </div>
   );
 }

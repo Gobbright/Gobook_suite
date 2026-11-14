@@ -1,5 +1,6 @@
 import { Bell, Trash2, Eye, EyeOff, AlertCircle, X } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { notify } from '../../../services/notifications.js';
 import { useNavigate } from 'react-router-dom';
 import { safeNavigate } from '../../../routes/navigation.js';
 
@@ -7,9 +8,15 @@ export function NotificationCenter({ notifications = [], onMarkRead, onDelete, o
   const [open, setOpen] = useState(false);
   const [localNotifications, setLocalNotifications] = useState(notifications);
   const navigate = useNavigate();
+  const shown = useRef(new Set());
 
   useEffect(() => {
     setLocalNotifications(notifications);
+    for (const item of notifications) {
+      if (item.read || shown.current.has(item.id)) continue;
+      shown.current.add(item.id);
+      notify({ title: item.title, message: item.message, href: '/admin/notifications' });
+    }
   }, [notifications]);
 
   const unreadCount = localNotifications.filter((n) => !n.read).length;

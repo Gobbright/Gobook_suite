@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { useAutomobileListingLayout } from '../../../../../hooks/useAutomobileListingLayout.js';
 import { AutomobileWarehousePage } from '../../../automobile/AutomobileWarehousePage.jsx';
@@ -153,7 +154,7 @@ function DefaultWarehousePage() {
     if (!window.confirm('Delete this warehouse?')) return;
     api.invDeleteWarehouse(id)
       .then(() => { loadAll(); api.invWarehouseStats().then(setStats).catch(() => {}); })
-      .catch(() => alert('Failed to delete warehouse'));
+      .catch(() => notify('Failed to delete warehouse'));
   }
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));

@@ -1,4 +1,10 @@
 import { Router } from 'express';
+import { employeePresence } from '../employee-portal/presenceController.js';
+import { employeeUpdates } from '../employee-portal/updatesController.js';
+import { employeeNavigationCounts, readOwnerNotification, readAllOwnerNotifications } from '../employee-portal/navigationController.js';
+import { listWork, assignWork, updateWork } from '../employee-portal/workController.js';
+import { listNotifications, sendNotifications, retryNotification, emailEmployeePayslip } from '../employee-portal/notificationController.js';
+import { downloadEmployeeReport } from '../employee-portal/reportController.js';
 
 import { archiveAdminNotification, createAdminRecord, deleteAdminRecord, deleteAdminSectionRow, getAdminDashboard, getAdminNotifications, getAdminRecords, getAdminSection, getAdminStats, getSubscriptionPayments, getSubscriptionPlans, loginAdmin, markAllAdminNotificationsRead, sendSubscriptionPaymentInvoice, updateAdminNotification, updateAdminRecord, updateAdminSectionRow, updateSubscriptionPlan, sendRenewalReminder, updateUserSubscriptionState } from './adminController.js';
 import { adminBackupUpload, adminStorageUpload, downloadStorageFile, exportStorageCollections, exportUserMongoBackup, getDailyReports, getStorageOverview, importUserMongoBackup, listStorageBusinesses, listStorageFiles, uploadStorageFile } from './storageController.js';
@@ -9,8 +15,11 @@ import { requireAdminAuth } from './adminAuth.js';
 import { revokeSecuritySession } from '../../services/securitySessions.js';
 import { revokeSession } from '../../services/appSessions.js';
 import { deletePortalAttendance, deletePortalLeave, deletePortalPayroll } from '../employee-portal/listingDeleteController.js';
-import { getEmployeeAccess, getEmployeeOverview, setEmployeeAccess, resetEmployeeQr } from '../employee-portal/accessController.js';
+import { getEmployeeAccess, getEmployeeOverview, setEmployeeAccess, resetEmployeeQr, setEmployeeQrDisplay } from '../employee-portal/accessController.js';
 import { listEmployeePermissions, reviewEmployeePermission } from '../employee-portal/selfServiceController.js';
+import { getEmailSettings, saveEmailSettings } from '../retail/more-modules/emailController.js';
+import { createSecurityRateLimit } from '../../middleware/securityRateLimit.js';
+import { requireVerifiedBusinessEmail } from '../../middleware/requireVerifiedBusinessEmail.js';
 
 export const adminRouter = Router();
 
@@ -58,15 +67,31 @@ adminRouter.put('/whatsapp-provider/:id/status', requireAdminAuth, updateWhatsAp
 
 
 const requireHrAdmin = [requireEmployeeManagementAdminAuth];
+adminRouter.get('/employee-navigation-counts', ...requireHrAdmin, employeeNavigationCounts);
+adminRouter.get('/employee-work', ...requireHrAdmin, listWork);
+adminRouter.post('/employee-work', ...requireHrAdmin, assignWork);
+adminRouter.put('/employee-work/:id', ...requireHrAdmin, updateWork);
+const emailSetupLimit = createSecurityRateLimit({ bucket: 'employee-email-setup', limit: 10, windowMs: 3600000, identify: (req) => req.user.id });
 
+adminRouter.get('/employee-email-settings', ...requireHrAdmin, getEmailSettings);
+adminRouter.put('/employee-email-settings', ...requireHrAdmin, emailSetupLimit, saveEmailSettings);
 adminRouter.get('/employee-dashboard', ...requireHrAdmin, adminDashboard);
+adminRouter.get('/employee-reports/:kind/:format', ...requireHrAdmin, downloadEmployeeReport);
+adminRouter.get('/employee-notifications', ...requireHrAdmin, listNotifications);
+adminRouter.put('/employee-notifications/read-all', ...requireHrAdmin, readAllOwnerNotifications);
+adminRouter.put('/employee-notifications/:id/read', ...requireHrAdmin, readOwnerNotification);
+adminRouter.post('/employee-notifications', ...requireHrAdmin, requireVerifiedBusinessEmail, createSecurityRateLimit({ bucket: 'employee-notifications', limit: 20, windowMs: 3600000, identify: (req) => req.user.id }), sendNotifications);
+adminRouter.post('/employee-notifications/:id/retry', ...requireHrAdmin, requireVerifiedBusinessEmail, retryNotification);
 adminRouter.get('/employees', ...requireHrAdmin, listAdminEmployees);
+adminRouter.get('/employees/presence', ...requireHrAdmin, employeePresence);
+adminRouter.get('/employee-updates', ...requireHrAdmin, employeeUpdates);
 adminRouter.get('/employees/:id/access', ...requireHrAdmin, getEmployeeAccess);
 adminRouter.get('/employees/:id/overview', ...requireHrAdmin, getEmployeeOverview);
-adminRouter.put('/employees/:id/access', ...requireHrAdmin, setEmployeeAccess);
+adminRouter.put('/employees/:id/access', ...requireHrAdmin, (req, res, next) => req.body?.loginEnabled === false ? next() : requireVerifiedBusinessEmail(req, res, next), setEmployeeAccess);
+adminRouter.put('/employees/:id/qr-display', ...requireHrAdmin, setEmployeeQrDisplay);
 adminRouter.post('/employees/:id/qr/reset', ...requireHrAdmin, resetEmployeeQr);
-adminRouter.post('/employees', ...requireHrAdmin, employeePhotoUpload.single('photo'), createAdminEmployee);
-adminRouter.put('/employees/:id', ...requireHrAdmin, updateAdminEmployee);
+adminRouter.post('/employees', ...requireHrAdmin, requireVerifiedBusinessEmail, employeePhotoUpload.single('photo'), createAdminEmployee);
+adminRouter.put('/employees/:id', ...requireHrAdmin, employeePhotoUpload.single('photo'), updateAdminEmployee);
 adminRouter.delete('/employees/:id', ...requireHrAdmin, deleteAdminEmployee);
 adminRouter.get('/attendance/today', ...requireHrAdmin, adminTodayAttendance);
 adminRouter.get('/attendance/monthly', ...requireHrAdmin, adminMonthlyAttendance);
@@ -82,6 +107,7 @@ adminRouter.post('/leaves', ...requireHrAdmin, leaveAttachmentUpload.single('att
 adminRouter.put('/leaves/:id/status', ...requireHrAdmin, updateLeaveStatus);
 adminRouter.delete('/leaves/:id', ...requireHrAdmin, deletePortalLeave);
 adminRouter.get('/payroll', ...requireHrAdmin, adminPayroll);
+adminRouter.post('/payroll/:id/email', ...requireHrAdmin, requireVerifiedBusinessEmail, emailEmployeePayslip);
 adminRouter.post('/payroll/generate', ...requireHrAdmin, generateAdminPayroll);
 adminRouter.post('/payroll/approve', ...requireHrAdmin, approveAdminPayroll);
 adminRouter.put('/payroll/:id', ...requireHrAdmin, updateAdminPayroll);

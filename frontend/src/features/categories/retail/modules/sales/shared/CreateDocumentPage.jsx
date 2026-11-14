@@ -1,3 +1,5 @@
+import { notify } from '../../../../../../services/notifications.js';
+import { useRequireBusinessEmail } from '../../../../../../hooks/useRequireBusinessEmail.js';
 import { DocumentQuickActions } from '../../../../../../components/forms/DocumentQuickActions.jsx';
 import { FashionB2CInvoice } from './FashionB2CInvoice.jsx';
 import { PurchasePdfImport } from './PurchasePdfImport.jsx';
@@ -1375,6 +1377,7 @@ function MobileBarcodeScanner({ open, onClose, onDetected, status, unknownCode, 
 // ── Main component ───────────────────────────────────────────────────────────
 
 export function CreateDocumentPage({ documentType = 'invoice', invoiceId }) {
+  const requireBusinessEmail = useRequireBusinessEmail();
   const currentUser = useCurrentUser();
   const isAutomobileSale = isAutomobileInvoice(currentUser?.category, documentType);
   const isAutomobileQuotation = currentUser?.category === 'automobile' && documentType === 'quotation';
@@ -1608,7 +1611,7 @@ export function CreateDocumentPage({ documentType = 'invoice', invoiceId }) {
         document.body.appendChild(printFrame);
       })
       .catch((err) => {
-        alert(err.message || 'Unable to prepare barcode labels. Save without barcode printing or try again.');
+        notify(err.message || 'Unable to prepare barcode labels. Save without barcode printing or try again.');
         setPurchaseBarcodePrintJob(null);
       });
 
@@ -3993,6 +3996,7 @@ const [customFields, setCustomFields]         = useState([]);
   }
 
   async function handleSendEmail() {
+    if (!requireBusinessEmail()) return;
     if (!emailTo.trim()) return;
     if (isAutomobileChallan) {
       const validationErrors = validate();
@@ -4977,7 +4981,7 @@ const [customFields, setCustomFields]         = useState([]);
       const phone = String(c.phone || '').replace(/\D/g, '');
       window.open(`https://wa.me/${phone}?text=${text}`, '_blank', 'noopener');
     } },
-    { id: 'email', label: 'Email', onSelect: () => setShowEmailModal(true) },
+    { id: 'email', label: 'Email', onSelect: () => { if (requireBusinessEmail()) setShowEmailModal(true); } },
     { id: 'pdf', label: 'Download PDF', onSelect: () => { setDownloadPdfMode(true); setAutoPrintPreview(false); setShowPreview(true); } },
     { id: 'sms', label: 'SMS', onSelect: () => {
       const c = getEffectiveCustomer();

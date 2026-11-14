@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -227,7 +228,7 @@ export function MedicineDispensingPage() {
 
   async function submitDispense(partialRequested) {
     if (!canDispense) {
-      window.alert('Resolve stock, expiry, quantity, and allergy checks before dispensing.');
+      notify('Resolve stock, expiry, quantity, and allergy checks before dispensing.');
       return;
     }
     setSaving(true);

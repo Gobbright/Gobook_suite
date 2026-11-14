@@ -4,6 +4,7 @@ import { monthQuery } from './monthScope.js';
 export const attendanceService = {
   checkIn: (payload) => api.post('/employee/attendance/check-in', payload),
   checkOut: (payload) => api.post('/employee/attendance/check-out', payload),
+  changeBreak: (action) => api.post('/employee/attendance/break', { action }),
   monthly: (month) => api.get(`/employee/attendance/monthly${monthQuery(month)}`),
   correction: (payload) => api.post('/employee/attendance/correction', payload),
   adminDate: (date) => api.get(`/admin/attendance/today${date ? `?date=${date}` : ''}`),

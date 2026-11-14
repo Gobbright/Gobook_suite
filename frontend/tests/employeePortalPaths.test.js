@@ -8,6 +8,8 @@ test('employee dashboard and navigation keep the business, owner and employee id
   assert.equal(employeeScreenPath(user), base);
   assert.equal(employeeScreenPath(user, 'documents'), base + '/documents');
   assert.equal(employeeScreenPath(user, 'leave/apply'), base + '/leave/apply');
+  assert.equal(employeeScreenPath(user, 'notifications'), base + '/notifications');
+  assert.equal(employeeScreenPath(user, 'work'), base + '/work');
   assert.equal(employeeScreenPath(user, 'https://attacker.test'), base);
 });
 test('legacy employee links keep the requested screen while invalid/external bases are refused', () => {

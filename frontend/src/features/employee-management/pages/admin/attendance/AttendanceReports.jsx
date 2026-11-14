@@ -1,3 +1,4 @@
+import { EmployeeReportButtons } from '../../../components/common/EmployeeReportButtons.jsx';
 import { useMemo, useState } from 'react';
 import { BadgeCheck, Download, Fingerprint, MapPin, Radio, ScanFace, Smartphone } from 'lucide-react';
 
@@ -23,9 +24,10 @@ export default function AttendanceReports() {
   const depts = [...new Set(employees.map((employee) => employee.dept).filter(Boolean))];
   const shifts = [...new Set(employees.map((employee) => employee.shift || 'General Shift').filter(Boolean))];
   const scoped = rows.filter((row) => (!dept || row.dept === dept) && (!shift || row.shift === shift));
+  const scopedEmployees = employees.filter((employee) => (!dept || employee.dept === dept) && (!shift || (employee.shift || 'General Shift') === shift));
   const summary = {
-    total: employees.length,
-    working: 26,
+    total: scopedEmployees.length,
+    working: new Set(scoped.map((row) => row.date)).size,
     present: scoped.filter((row) => row.status === 'Present').length,
     absent: scoped.filter((row) => row.status === 'Absent').length,
     rate: scoped.length ? (((scoped.filter((row) => ['Present', 'Late'].includes(row.status)).length / scoped.length) * 100).toFixed(2)) : '0.00',
@@ -35,7 +37,8 @@ export default function AttendanceReports() {
     for (const row of scoped.filter((record) => record.status === 'Late')) counts.set(row.name, (counts.get(row.name) || 0) + 1);
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
   }, [scoped]);
-  const chartDays = Array.from({ length: 31 }, (_, index) => index + 1);
+  const [year, monthNumber] = month.split('-').map(Number);
+  const chartDays = Array.from({ length: new Date(year, monthNumber, 0).getDate() }, (_, index) => index + 1);
 
   function exportReport() {
     const lines = [
@@ -65,6 +68,7 @@ export default function AttendanceReports() {
         <button className="hr-btn" type="button" onClick={exportReport}><Download size={14} /> Export</button>
       </div>
       <AttendanceNav current="/employee-management/attendance/reports" />
+      <EmployeeReportButtons kind="attendance" month={month} department={dept} shift={shift} />
       {message && <p className="leave-success-message">{message}</p>}
       <section className="hr-card">
         <div className="report-filter-grid">
@@ -78,9 +82,9 @@ export default function AttendanceReports() {
           <aside className="report-menu">{['Daily Attendance', 'Monthly Attendance', 'Employee-wise', 'Department-wise', 'Late Arrivals', 'Absentee Report', 'Overtime Report', 'Shift-wise', 'Attendance % Report'].map((item) => <button key={item} type="button" className={activeMenu === item ? 'active' : ''} onClick={() => { setActiveMenu(item); setReportType(item); }}>{item}</button>)}</aside>
           <section className="report-main">
             <h2>Monthly Attendance Summary ({month})</h2>
-            <div className="report-summary-grid">{[['Total Employees', summary.total], ['Total Working Days', summary.working], ['Total Present Days', summary.present], ['Total Absent Days', summary.absent], ['Avg Attendance %', `${summary.rate}%`]].map(([k, v]) => <span key={k}>{k}<strong>{v}</strong></span>)}</div>
-            <div className="attendance-chart">{chartDays.map((day) => <span key={day} style={{ height: `${20 + ((day * 17) % 78)}%` }} />)}</div>
-            <div className="attendance-legend"><span><i className="chart-dot green" />Present</span><span><i className="chart-dot red" />Absent</span><span><i className="chart-dot amber" />Late</span><span><i className="chart-dot blue" />Attendance %</span></div>
+            <div className="report-summary-grid">{[['Total Employees', summary.total], ['Dates with Records', summary.working], ['Total Present Days', summary.present], ['Total Absent Days', summary.absent], ['Avg Attendance %', `${summary.rate}%`]].map(([k, v]) => <span key={k}>{k}<strong>{v}</strong></span>)}</div>
+            <div className="attendance-chart">{chartDays.map((day) => { const date = `${month}-${String(day).padStart(2, '0')}`; const count = scoped.filter((row) => row.date === date && ['Present', 'Late', 'WFH', 'On Duty'].includes(row.status)).length; return <span key={day} title={`${date}: ${count} present`} style={{ height: `${summary.total ? Math.min(100, count / summary.total * 100) : 0}%` }} />; })}</div>
+            <div className="attendance-legend"><span><i className="chart-dot green" />Recorded present employees per day</span></div>
           </section>
           <aside className="hr-card report-late"><h2>Top Late Employees</h2>{lateList.length === 0 ? <p>No late entries.</p> : lateList.map(([name, count], index) => <p key={name}><span>{index + 1}. {name}</span><strong>{count} Times</strong></p>)}</aside>
         </div>

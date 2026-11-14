@@ -1,4 +1,4 @@
-const employeeScreens = new Set(['dashboard', 'attendance', 'attendance/monthly', 'attendance/correction', 'leave/apply', 'leave/status', 'leave/history', 'payslips', 'holidays', 'profile', 'documents', 'permissions']);
+const employeeScreens = new Set(['dashboard', 'attendance', 'attendance/monthly', 'attendance/correction', 'leave/apply', 'leave/status', 'leave/history', 'payslips', 'holidays', 'profile', 'documents', 'permissions', 'notifications', 'work']);
 
 export function employeePortalBase(user) {
   const base = user?.portalBasePath || '';

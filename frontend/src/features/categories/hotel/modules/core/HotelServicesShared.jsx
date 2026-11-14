@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { Download, Edit2, Eye, Filter, Plus, Search, Settings, Trash2 } from 'lucide-react';
 
 export const roomServiceOrders = [];
@@ -123,7 +124,7 @@ export function ServiceTabs({ tabs, active, onChange }) {
 export function RowAction({ item, onAction }) {
   const openAction = (action) => {
     if (onAction) onAction(action, item);
-    else window.alert(`${action} ${item?.id || item?.name || 'record'}`);
+    else notify(`${action} ${item?.id || item?.name || 'record'}`);
   };
   return (
     <div className="flex items-center justify-end gap-1">

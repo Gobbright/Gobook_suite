@@ -6,6 +6,7 @@ import { Business } from '../../models/Business.js';
 import { runAppointmentReminders } from '../../jobs/appointmentReminders.js';
 import { httpError } from '../../utils/httpError.js';
 import { deleteStoredFile, hasExpectedFileSignature, storeBuffer } from '../../services/gridfsStorage.js';
+import { businessEmailOwnerId, businessEmailSettings, isBusinessEmailVerified } from '../../services/businessEmail.js';
 
 const LEGACY_RETAIL_SUBCATEGORY = 'electronics-technology';
 
@@ -117,6 +118,11 @@ export async function updateSettings(req, res, next) {
   try {
     const userId = await settingsOwnerUserId(req);
     const payload = { ...req.body };
+    delete payload.userId;
+    delete payload._id;
+    // Only a successful SMTP verification may set this marker.
+    delete payload.emailSmtpVerifiedAt;
+    if (payload.emailSmtpPass === '') delete payload.emailSmtpPass;
     if (Object.prototype.hasOwnProperty.call(payload, 'retailSubcategory')) {
       delete payload.retailSubcategory;
     }
@@ -139,14 +145,18 @@ export async function updateSettings(req, res, next) {
         );
       }
     }
-    let settings = await BusinessSettings.findOne({ userId });
+    let settings = await BusinessSettings.findOne({ userId }).select('+emailSmtpPass');
+    const smtpChanged = ['emailSmtpHost', 'emailSmtpPort', 'emailSmtpSecure', 'emailSmtpUser', 'emailSmtpPass'].some((key) => Object.prototype.hasOwnProperty.call(payload, key) && String(payload[key]) !== String(settings?.[key] ?? ''));
+    if (smtpChanged) payload.emailSmtpVerifiedAt = undefined;
     if (!settings) {
       settings = await BusinessSettings.create({ userId, ...payload });
     } else {
       Object.assign(settings, payload);
       await settings.save();
     }
-    res.json(await applyBranchSettings(req, settings.toObject()));
+    const safe = settings.toObject();
+    delete safe.emailSmtpPass;
+    res.json(await applyBranchSettings(req, safe));
   } catch (err) {
     next(err);
   }
@@ -163,10 +173,10 @@ export async function updateSettings(req, res, next) {
 // option) so a click only sends to patients who haven't been reminded yet.
 export async function sendTestEmail(req, res, next) {
   try {
-    const userId = req.user.id;
-    const settings = await BusinessSettings.findOne({ userId }).select('+emailSmtpPass');
-    if (!settings?.emailSmtpHost || !settings?.emailSmtpUser || !settings?.emailSmtpPass) {
-      return next(httpError(400, 'Save your SMTP settings first, then try again.'));
+    const userId = await businessEmailOwnerId(req.user);
+    const settings = req.businessEmailSettings || await businessEmailSettings(req.user);
+    if (!isBusinessEmailVerified(settings)) {
+      return next(httpError(403, 'Verify your Google app password before sending reminders.'));
     }
 
     const result = await runAppointmentReminders({ force: true, onlyUserId: userId, resend: true });

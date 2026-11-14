@@ -269,6 +269,7 @@ export function LoginPage() {
           </form>
 
           <p className={`auth-login-register text-center text-[12px] mt-3 mb-0 ${MUTED}`}>Don&apos;t have an account? <Link to="/register" className="font-bold no-underline hover:underline" style={{ color: '#4f90ff' }}>Create Account</Link></p>
+          <p className="text-center text-[12px] mt-3 mb-0"><Link to="/employee-login" className="font-semibold text-blue-600 no-underline hover:underline">Employee login</Link></p>
       </AuthLayout>
 
       {authTransition && (

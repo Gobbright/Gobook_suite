@@ -12,7 +12,7 @@ import './automobileStockLedger.css';
 const EMPTY = { search: '', from: '', to: '', warehouse: '', type: '', reference: '' };
 const count = (value) => value == null ? '—' : value.toLocaleString('en-IN', { maximumFractionDigits: 3 });
 const dateText = (date) => date && Number.isFinite(Date.parse(date)) ? new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '—';
-const timeText = (date) => date && Number.isFinite(Date.parse(date)) ? new Date(date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }) : '';
+const timeText = (date) => date && Number.isFinite(Date.parse(date)) ? new Date(date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '';
 function documentLink(row) {
   return stockSourceLink(row) || (row.direction === 'in' ? '/stock-in' : '/stock-out');
 }

@@ -1,4 +1,5 @@
 import { Employee } from '../../models/Employee.js';
+import { queueEmployeeEvent } from '../../services/employeeNotifications.js';
 import { HRDocument } from '../../models/Document.js';
 import { EmployeePermission } from '../../models/EmployeePermission.js';
 import { employeeMonth } from '../../services/employeeMonth.js';
@@ -51,6 +52,7 @@ export async function reviewEmployeePermission(req, res, next) {
     if (!['Approved', 'Rejected'].includes(req.body.status)) throw httpError(400, 'Choose Approved or Rejected');
     const data = await EmployeePermission.findOneAndUpdate({ _id: req.params.id, ownerUserId: req.employeeUser.ownerUserId, status: 'Pending' }, { $set: { status: req.body.status, reviewedBy: req.employeeUser.email || req.employeeUser.id, reviewedAt: new Date() } }, { new: true, runValidators: true });
     if (!data) throw httpError(404, 'Pending permission request not found');
+    await queueEmployeeEvent(req.employeeUser.ownerUserId, data.employeeId, { requestKey: `permission:${data._id}:${data.status}`, kind: 'permission', title: `Permission ${data.status.toLowerCase()}`, message: `Your permission request for ${data.date}, ${data.fromTime} to ${data.toTime}, is ${data.status.toLowerCase()}.` });
     res.json(data);
   } catch (error) { next(error); }
 }

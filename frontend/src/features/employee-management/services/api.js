@@ -2,6 +2,8 @@ import { API_BASE_URL } from '../../../services/apiBase.js';
 import { getToken as getMainToken } from '../../../services/authToken.js';
 import { humanVerificationHeaders } from '../../../services/humanVerification.js';
 import { tokenIsCurrent } from '../../../services/tokenExpiry.js';
+import { notifyBusinessEmailChanged } from '../../../services/businessEmail.js';
+import { mutationNotification } from '../../../services/notifications.js';
 
 const GET_CACHE_TTL_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -14,6 +16,8 @@ function getEmployeeToken() {
   if (token) {
     localStorage.removeItem('employee_portal_token');
     localStorage.removeItem('employee_portal_user');
+    clearGetCache();
+    window.dispatchEvent(new Event('employee:session-expired'));
   }
   return '';
 }
@@ -51,7 +55,7 @@ async function exchangeMainToken() {
 
 async function authHeader(path, providedHeaders = {}) {
   if (providedHeaders.Authorization) return providedHeaders;
-  if (path.startsWith('/employee/auth/login')) return providedHeaders;
+  if (['/employee/auth/login', '/employee/auth/verify-otp', '/employee/auth/resend-otp'].includes(path)) return providedHeaders;
 
   if (path.startsWith('/admin/')) {
     const mainToken = getMainToken();
@@ -67,13 +71,14 @@ async function authHeader(path, providedHeaders = {}) {
   return token ? { ...providedHeaders, Authorization: `Bearer ${token}` } : providedHeaders;
 }
 
-export async function request(path, { method = 'GET', body, headers = {} } = {}) {
+export async function request(path, { method = 'GET', body, headers = {}, keepalive = false } = {}) {
   const finalHeaders = await authHeader(path, headers);
   const verificationHeaders = await humanVerificationHeaders(path, method);
   let res;
   try {
     res = await fetch(`${API_BASE_URL}${path}`, {
       method,
+      keepalive,
       headers: {
         'Content-Type': 'application/json',
         ...finalHeaders,
@@ -86,11 +91,12 @@ export async function request(path, { method = 'GET', body, headers = {} } = {})
     if (error?.name === 'TimeoutError') {
       throw new Error('Server response timed out. Please try again.', { cause: error });
     }
-    throw new Error('Backend not running. Start backend on port 5002 and try again.', { cause: error });
+    throw new Error('The service is temporarily unavailable. Please try again.', { cause: error });
   }
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
-  if (res.status === 401 && path !== '/employee/auth/login') {
+  const currentEmployeeToken = localStorage.getItem('employee_portal_token');
+  if (res.status === 401 && currentEmployeeToken && finalHeaders.Authorization === `Bearer ${currentEmployeeToken}` && !['/employee/auth/login', '/employee/auth/verify-otp', '/employee/auth/resend-otp'].includes(path)) {
     localStorage.removeItem('employee_portal_token');
     localStorage.removeItem('employee_portal_user');
     clearGetCache();
@@ -124,9 +130,13 @@ function cachedGet(path) {
 }
 
 async function mutate(path, options) {
-  const data = await request(path, options);
-  clearGetCache();
-  return data;
+  try {
+    const data = await request(path, options);
+    clearGetCache();
+    if (path === '/admin/employee-email-settings') notifyBusinessEmailChanged();
+    mutationNotification(path, options.method, data);
+    return data;
+  } catch (error) { mutationNotification(path, options.method, null, error); throw error; }
 }
 
 async function upload(path, formData, { method = 'POST' } = {}) {
@@ -141,13 +151,14 @@ async function upload(path, formData, { method = 'POST' } = {}) {
     });
   } catch (error) {
     if (error?.name === 'TimeoutError') {
-      throw new Error('Server response timed out. Please try again.', { cause: error });
+      const failure = new Error('Server response timed out. Please try again.', { cause: error }); mutationNotification(path, method, null, failure); throw failure;
     }
-    throw new Error('Backend not running. Start backend on port 5002 and try again.', { cause: error });
+    const failure = new Error('The service is temporarily unavailable. Please try again.', { cause: error }); mutationNotification(path, method, null, failure); throw failure;
   }
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new Error(data?.message || 'Upload failed');
+  if (!res.ok) { const failure = new Error(data?.message || 'Upload failed'); mutationNotification(path, method, null, failure); throw failure; }
+  mutationNotification(path, method, data);
   clearGetCache();
   return data;
 }

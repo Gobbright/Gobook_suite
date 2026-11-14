@@ -1,3 +1,5 @@
+import { EmployeeReportButtons } from '../../components/common/EmployeeReportButtons.jsx';
+import { formatTime12 } from '../../../../utils/timeFormat.js';
 import { useState } from 'react';
 import { DataTable } from '../../components/common/DataTable.jsx';
 import { PageHeader } from '../../components/common/PageHeader.jsx';
@@ -6,7 +8,7 @@ import { attendanceService } from '../../services/attendanceService.js';
 import { currentEmployeeMonth } from '../../services/monthScope.js';
 
 function LocationCell({ location }) {
-  if (!location?.latitude || !location?.longitude) return '-';
+  if (location?.latitude == null || location?.longitude == null) return '-';
   const text = location.address || [location.street, location.area, location.city, location.district].filter(Boolean).join(', ') || `${Number(location.latitude).toFixed(5)}, ${Number(location.longitude).toFixed(5)}`;
   return <a className="location-link" href={location.mapUrl || `https://www.google.com/maps?q=${location.latitude},${location.longitude}`} target="_blank" rel="noreferrer">{text}</a>;
 }
@@ -14,6 +16,6 @@ function LocationCell({ location }) {
 export default function MonthlyAttendance() {
   const [month, setMonth] = useState(currentEmployeeMonth);
   const { data, loading, error } = useLoad(() => attendanceService.monthly(month), [month]);
-  const columns = [{ key: 'date', label: 'Date' }, { key: 'checkIn', label: 'Check In' }, { key: 'checkInLocation', label: 'In Location', render: (row) => <LocationCell location={row.checkInLocation} /> }, { key: 'checkOut', label: 'Check Out' }, { key: 'checkOutLocation', label: 'Out Location', render: (row) => <LocationCell location={row.checkOutLocation} /> }, { key: 'hours', label: 'Hours' }, { key: 'status', label: 'Status' }];
-  return <><PageHeader title="Monthly Attendance" subtitle="Only your attendance is shown" action={<input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />} />{error && <p className="error">{error}</p>}{loading ? <div className="card">Loading...</div> : <DataTable columns={columns} rows={data?.data || []} />}</>;
+  const columns = [{ key: 'date', label: 'Date' }, { key: 'checkIn', label: 'Check In' }, { key: 'checkInLocation', label: 'In Location', render: (row) => <LocationCell location={row.checkInLocation} /> }, { key: 'checkOut', label: 'Check Out' }, { key: 'checkOutLocation', label: 'Out Location', render: (row) => <LocationCell location={row.checkOutLocation} /> }, { key: 'breakMinutes', label: 'Break Time', render: (row) => <span>{row.breakMinutes || 0} min{(row.breaks || []).map((item, index) => <small className="employee-break-range" key={index}>{formatTime12(item.start)} – {formatTime12(item.end || 'Ongoing')}</small>)}</span> }, { key: 'hours', label: 'Working Hours' }, { key: 'status', label: 'Status' }];
+  return <><PageHeader title="Monthly Attendance" subtitle="Only your attendance is shown" action={<input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />} /><EmployeeReportButtons kind="attendance" month={month} employee />{error && <p className="error">{error}</p>}{loading ? <div className="card">Loading...</div> : <DataTable columns={columns} rows={data?.data || []} />}</>;
 }

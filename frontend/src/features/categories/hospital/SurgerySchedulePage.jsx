@@ -1,3 +1,4 @@
+import { notify } from '../../../services/notifications.js';
 import { useMemo, useState } from 'react';
 import { CalendarCheck, CheckCircle2, Clock3, Plus, Search } from 'lucide-react';
 
@@ -144,11 +145,11 @@ export function SurgerySchedulePage() {
 
   async function scheduleSurgery() {
     if (!form.patientName.trim()) {
-      window.alert('Patient is required.');
+      notify('Patient is required.');
       return;
     }
     if (!form.surgery || !form.surgeon) {
-      window.alert('Surgery and surgeon are required.');
+      notify('Surgery and surgeon are required.');
       return;
     }
 

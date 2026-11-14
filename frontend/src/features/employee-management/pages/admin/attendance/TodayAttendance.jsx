@@ -8,6 +8,8 @@ import { useLoad } from '../../../hooks/useLoad.js';
 import { adminService } from '../../../services/adminService.js';
 import { attendanceService } from '../../../services/attendanceService.js';
 import { AttendanceNav } from './AttendanceNav.jsx';
+import { formatTime12 } from '../../../../../utils/timeFormat.js';
+import { TimeInput12 } from '../../../../../components/forms/TimeInput12.jsx';
 
 const STATUSES = ['Present', 'Late', 'Absent', 'WFH', 'On Duty', 'Half Day', 'On Leave'];
 
@@ -43,7 +45,7 @@ export default function TodayAttendance() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [actionError, setActionError] = useState('');
-  const [form, setForm] = useState({ employeeId: '', status: 'Present', checkIn: '09:00', checkOut: '', remarks: '', shift: '' });
+  const [form, setForm] = useState({ employeeId: '', status: 'Present', checkIn: '09:00', checkOut: '', remarks: '', shift: '', breaks: [] });
   const { data, loading, error, setData, reload } = useLoad(() => attendanceService.adminDate(date), [date]);
   const employeesLoad = useLoad(adminService.employees, []);
   const rows = useMemo(() => data?.data || [], [data]);
@@ -90,10 +92,10 @@ export default function TodayAttendance() {
     setMarkOpen(true);
     if (row) {
       setEditing(row._id ? row : null);
-      setForm({ employeeId: row.employeeId, status: row.status === 'Not Marked' ? 'Present' : row.status || 'Present', checkIn: row.checkIn === '--' ? '' : row.checkIn || '09:00', checkOut: row.checkOut === '--' ? '' : row.checkOut, remarks: row.remarks || '', shift: row.shift || employeeById.get(row.employeeId)?.shift || 'General Shift' });
+      setForm({ employeeId: row.employeeId, status: row.status === 'Not Marked' ? 'Present' : row.status || 'Present', checkIn: row.checkIn === '--' ? '' : row.checkIn || '09:00', checkOut: row.checkOut === '--' ? '' : row.checkOut, remarks: row.remarks || '', shift: row.shift || employeeById.get(row.employeeId)?.shift || 'General Shift', breaks: row.breaks || [] });
     } else {
       setEditing(null);
-      setForm({ employeeId: employees[0]?.employeeId || '', status: 'Present', checkIn: '09:00', checkOut: '', remarks: '', shift: employees[0]?.shift || 'General Shift' });
+      setForm({ employeeId: employees[0]?.employeeId || '', status: 'Present', checkIn: '09:00', checkOut: '', remarks: '', shift: employees[0]?.shift || 'General Shift', breaks: [] });
     }
   }
 
@@ -275,8 +277,9 @@ export default function TodayAttendance() {
                     <td><span className={statusClass(row.status)}>{row.status}</span></td>
                     <td>
                       <div className="attendance-time-cell">
-                        <span>{checkIn}</span>
-                        {checkOut && <small>{checkOut}</small>}
+                        <span>{formatTime12(checkIn)}</span>
+                        {checkOut && <small>{formatTime12(checkOut)}</small>}
+                        {row.breaks?.length > 0 && <small>Break: {row.breakMinutes || 0} min{!row.breaks.at(-1).end ? ' + ongoing' : ''}</small>}
                       </div>
                     </td>
                     <td><span className="attendance-remarks" title={row.remarks || ''}>{row.remarks || '-'}</span></td>
@@ -352,24 +355,29 @@ export default function TodayAttendance() {
 
               <div>
                 <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Check In</label>
-                <input
-                  className="h-[40px] w-full rounded-md border border-[#dbe4ef] px-3 text-[14px] outline-none font-[inherit] focus:border-blue-500"
+                <TimeInput12
+                  label="Check In"
                   value={form.checkIn}
                   onChange={(e) => setForm((current) => ({ ...current, checkIn: e.target.value }))}
-                  placeholder="09:00"
                 />
               </div>
 
               <div>
                 <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Check Out</label>
-                <input
-                  className="h-[40px] w-full rounded-md border border-[#dbe4ef] px-3 text-[14px] outline-none font-[inherit] focus:border-blue-500"
+                <TimeInput12
+                  label="Check Out"
                   value={form.checkOut}
                   onChange={(e) => setForm((current) => ({ ...current, checkOut: e.target.value }))}
-                  placeholder="18:00"
                 />
               </div>
 
+              <div className="md:col-span-2 employee-admin-breaks">
+                <div className="hr-doc-step-head"><strong>Break Times</strong><button className="hr-btn" type="button" disabled={form.breaks.length >= 30} onClick={() => setForm((current) => ({ ...current, breaks: [...current.breaks, { start: '', end: '' }] }))}>Add Break</button></div>
+                {form.breaks.map((row, index) => <div className="employee-break-edit" key={index}>
+                  {['start', 'end'].map((key) => <label key={key}>Break {index + 1} {key}<TimeInput12 label={`Break ${index + 1} ${key}`} value={row[key] || ''} onChange={(event) => setForm((current) => ({ ...current, breaks: current.breaks.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: event.target.value } : item) }))} /></label>)}
+                  <button className="hr-btn" type="button" aria-label={`Remove break ${index + 1}`} onClick={() => setForm((current) => ({ ...current, breaks: current.breaks.filter((_, itemIndex) => itemIndex !== index) }))}>Remove</button>
+                </div>)}
+              </div>
               <div className="md:col-span-2">
                 <label className="mb-1 block text-[13px] font-semibold text-[#536173]">Remarks</label>
                 <textarea

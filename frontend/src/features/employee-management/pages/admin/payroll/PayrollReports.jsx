@@ -1,5 +1,6 @@
+import { EmployeeReportButtons } from '../../../components/common/EmployeeReportButtons.jsx';
 import { useState } from 'react';
-import { Download, Mail, Printer } from 'lucide-react';
+import { Download, Printer } from 'lucide-react';
 
 import { useLoad } from '../../../hooks/useLoad.js';
 import { payrollService } from '../../../services/payrollService.js';
@@ -41,6 +42,7 @@ export default function PayrollReports() {
         <div className="hr-actions"><select className="attendance-select" value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item}>{item}</option>)}</select><input className="attendance-select" type="month" value={month} onChange={(event) => setMonth(event.target.value)} /><select className="attendance-select" value={department} onChange={(event) => setDepartment(event.target.value)}>{departments.map((dept) => <option key={dept}>{dept}</option>)}</select><button className="hr-btn primary" type="button" onClick={() => setMessage(`${category} generated for ${month}.`)}>Generate Report</button></div>
       </div>
       <PayrollNav current="/employee-management/payroll/reports" />
+      <EmployeeReportButtons kind={category === 'PF Report' || category === 'ESI Report' || category === 'TDS Report' ? 'statutory' : 'payroll'} month={month} department={department === 'All Departments' ? '' : department} />
       {(error || message) && <p className={error ? 'error' : 'leave-success-message'}>{error || message}</p>}
       <div className="payroll-report-layout">
         <aside className="hr-card report-category-list">{categories.map((item) => <button className={item === category ? 'active' : ''} key={item} type="button" onClick={() => setCategory(item)}>{item}</button>)}</aside>
@@ -49,7 +51,7 @@ export default function PayrollReports() {
           <div className="leave-total-grid payroll-total-grid">{[['Total Employees', filtered.length], ['Total Gross Salary', money(gross)], ['Total Deductions', money(deductions)], ['Net Payroll', money(net)]].map(([label, value]) => <section className="hr-card" key={label}><span>{label}</span><strong>{value}</strong></section>)}</div>
           <h3>Department Wise Summary</h3>
           <div className="hr-table-wrap"><table className="hr-table"><thead><tr><th>Department</th><th>Employees</th><th>Gross Salary</th><th>Deductions</th><th>Net Salary</th></tr></thead><tbody>{loading ? <tr><td colSpan="5">Loading report...</td></tr> : departmentRows.length ? departmentRows.map((row) => <tr key={row.dept}><td>{row.dept}</td><td>{row.employees}</td><td>{money(row.gross)}</td><td>{money(row.deductions)}</td><td>{money(row.net)}</td></tr>) : <tr><td colSpan="5">No payroll report data found.</td></tr>}</tbody></table></div>
-          <div className="payslip-actions"><button className="hr-btn" type="button" onClick={() => exportCsv(filtered, month)}><Download size={14} /> Export CSV</button><button className="hr-btn" type="button" onClick={() => window.print()}><Printer size={14} /> Print</button><button className="hr-btn" type="button" onClick={() => setMessage('Report email queued.')}><Mail size={14} /> Email</button></div>
+          <div className="payslip-actions"><button className="hr-btn" type="button" onClick={() => exportCsv(filtered, month)}><Download size={14} /> Export CSV</button><button className="hr-btn" type="button" onClick={() => window.print()}><Printer size={14} /> Print</button></div>
         </section>
       </div>
     </div>

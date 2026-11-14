@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { RowActionsMenu } from '../../../../../components/forms/RowActionsMenu.jsx';
 import { useEffect, useState } from 'react';
@@ -120,7 +121,7 @@ export function BrandsPage() {
     if (!window.confirm('Delete this brand? Products already tagged with it will keep the brand name as free text.')) return;
     api.invDeleteBrand(id)
       .then(() => { loadAll(); })
-      .catch((e) => alert(e.message || 'Failed to delete brand'));
+      .catch((e) => notify(e.message || 'Failed to delete brand'));
   }
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));

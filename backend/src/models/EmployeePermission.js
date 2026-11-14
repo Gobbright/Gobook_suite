@@ -14,4 +14,5 @@ const schema = new Schema({
   reviewedAt: Date,
 }, { timestamps: true });
 schema.index({ ownerUserId: 1, date: 1, employeeId: 1 });
+schema.index({ ownerUserId: 1, updatedAt: -1, _id: -1 });
 export const EmployeePermission = model('EmployeePermission', schema);

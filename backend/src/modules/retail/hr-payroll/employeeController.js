@@ -1,4 +1,8 @@
 import { Employee } from '../../../models/Employee.js';
+import { employeeDetails } from '../../../services/employeeDetails.js';
+import { employeeQrFields } from '../../../services/employeeQrProfile.js';
+import { rememberEmployeeAccess } from '../../../services/employeeAccess.js';
+import { AppUser } from '../../../models/AppUser.js';
 import { httpError } from '../../../utils/httpError.js';
 import { employeesWithAccess } from '../../../services/employeeAccess.js';
 import { asNumber, asText, enumValue, importSummary, parseExcelRows } from '../../../utils/excelImport.js';
@@ -124,9 +128,15 @@ export async function createEmployee(req, res, next) {
     const existing = await Employee.findOne({ userId, ...dupKey });
     if (existing) return next(httpError(409, `An employee with this ${dupField} already exists`));
     const employeeId = await nextEmployeeId(userId);
-    const { portalAlias, portalVersion, ...employeeData } = req.body;
-    const employee = await Employee.create({ ...employeeData, userId, employeeId });
-    res.status(201).json(employee);
+    const { portalAlias, portalVersion, emailVerifiedAt, emailVerifiedAddress, ...employeeData } = req.body;
+    if (employeeData.email) {
+      employeeData.email = String(employeeData.email).trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(employeeData.email)) throw httpError(400, 'Enter a valid employee email');
+    }
+    if (employeeData.qrDisplayFields !== undefined) employeeData.qrDisplayFields = employeeQrFields(employeeData.qrDisplayFields, true);
+    const employee = await Employee.create({ ...employeeData, ...employeeDetails(req.body), userId, employeeId });
+    const owner = await AppUser.findById(userId).select('name businessName email').lean();
+    res.status(201).json({ ...employee.toObject(), portalAccess: await rememberEmployeeAccess(employee, owner) });
   } catch (err) {
     if (err.code === 11000) return next(httpError(409, 'Employee ID already exists'));
     next(err);
@@ -165,6 +175,7 @@ export async function importEmployees(req, res, next) {
 
       const existing = await Employee.findOne({ userId, employeeId });
       if (existing) {
+        if (data.email !== String(existing.email || '').trim().toLowerCase()) { data.emailVerifiedAddress = ''; data.emailVerifiedAt = null; }
         await Employee.findByIdAndUpdate(existing._id, { $set: data }, { runValidators: true });
         summary.updated++;
       } else {
@@ -183,7 +194,16 @@ export async function importEmployees(req, res, next) {
 // PUT /api/hr-payroll/employees/:id
 export async function updateEmployee(req, res, next) {
   try {
-    const { employeeId, portalAlias, portalVersion, ...rest } = req.body;
+    const { employeeId, portalAlias, portalVersion, emailVerifiedAt, emailVerifiedAddress, userId, _id, ...rest } = req.body;
+    if (rest.email !== undefined) {
+      rest.email = String(rest.email || '').trim().toLowerCase();
+      if (rest.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rest.email)) throw httpError(400, 'Enter a valid employee email');
+      const current = await Employee.findOne({ _id: req.params.id, userId: req.user.id }).select('email').lean();
+      if (!current) throw httpError(404, 'Employee not found');
+      if (rest.email !== String(current.email || '').trim().toLowerCase()) { rest.emailVerifiedAddress = ''; rest.emailVerifiedAt = null; }
+    }
+    if (rest.qrDisplayFields !== undefined) rest.qrDisplayFields = employeeQrFields(rest.qrDisplayFields, true);
+    Object.assign(rest, employeeDetails(req.body));
     const employee = await Employee.findOneAndUpdate(
       { _id: req.params.id, userId: req.user.id },
       { $set: rest },

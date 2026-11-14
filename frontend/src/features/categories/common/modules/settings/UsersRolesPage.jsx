@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteTable, BulkDeleteRow } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { useEffect, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
@@ -253,7 +254,7 @@ export function UsersRolesPage() {
       await load();
       resetForm();
       if (!editingId && savedUser?.credentialsEmailSent === false) {
-        window.alert(`User created, but the login details email was not sent. ${savedUser.credentialsEmailError || 'Please check SMTP settings.'}`);
+        notify(`User created, but the login details email was not sent. ${savedUser.credentialsEmailError || 'Please check SMTP settings.'}`);
       }
     } catch (err) {
       setFormError(err.message || 'Unable to save user');

@@ -1,3 +1,4 @@
+import { queueEmployeeEvent } from '../../../services/employeeNotifications.js';
 import { Leave } from '../../../models/Leave.js';
 import { httpError } from '../../../utils/httpError.js';
 
@@ -89,6 +90,7 @@ export async function updateLeave(req, res, next) {
       { new: true, runValidators: true },
     ).lean();
     if (!leave) return next(httpError(404, 'Leave request not found'));
+    await queueEmployeeEvent(req.user.id, leave.empId, { requestKey: `leave:${leave._id}:${leave.status}:${leave.updatedAt?.getTime() || ''}`, kind: 'leave', title: 'Leave request updated', message: `Your leave request for ${leave.from} to ${leave.to} is ${leave.status}.` });
     res.json(leave);
   } catch (err) {
     next(err);
@@ -105,6 +107,7 @@ export async function patchLeaveStatus(req, res, next) {
       { new: true },
     ).lean();
     if (!leave) return next(httpError(404, 'Leave request not found'));
+    await queueEmployeeEvent(req.user.id, leave.empId, { requestKey: `leave:${leave._id}:${leave.status}:${leave.updatedAt?.getTime() || ''}`, kind: 'leave', title: 'Leave request updated', message: `Your leave request for ${leave.from} to ${leave.to} is ${leave.status}.` });
     res.json(leave);
   } catch (err) {
     next(err);

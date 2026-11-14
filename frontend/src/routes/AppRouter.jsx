@@ -1,3 +1,4 @@
+import { EmployeeUpdates } from '../features/employee-management/pages/admin/EmployeeUpdates.jsx';
 import { AutomobilePayrollPage } from '../features/categories/automobile/AutomobilePayrollPage.jsx';
 import { AutomobileLeavePage } from '../features/categories/automobile/AutomobileLeavePage.jsx';
 import { AutomobileAttendancePage } from '../features/categories/automobile/AutomobileAttendancePage.jsx';
@@ -34,10 +35,16 @@ import { DataDeletionPage } from '../features/meta/DataDeletionPage.jsx';
 import { LoginPage } from '../features/auth/LoginPage.jsx';
 import { RegisterPage } from '../features/auth/RegisterPage.jsx';
 import { VerifyEmailPage } from '../features/auth/VerifyEmailPage.jsx';
+import { BusinessEmailSetupPage } from '../features/auth/BusinessEmailSetupPage.jsx';
 import { PublicStorePage } from '../features/store/PublicStorePage.jsx';
 import { PlatformAdminPage } from '../features/platform-admin/PlatformAdminPage.jsx';
 import { EmployeeLoginRoute, EmployeePortalRoutes } from '../features/employee-management/EmployeePortalRoutes.jsx';
 import EmployeeAdminDashboard from '../features/employee-management/pages/admin/Dashboard.jsx';
+import EmployeeReports from '../features/employee-management/pages/admin/reports/Reports.jsx';
+import EmployeeNotifications from '../features/employee-management/pages/employee/Notifications.jsx';
+import WorkManagement from '../features/employee-management/pages/employee/WorkManagement.jsx';
+import EmployeeLoginSettings from '../features/employee-management/pages/admin/settings/Settings.jsx';
+import EmployeeLoginLinksPage from '../features/employee-management/components/common/EmployeeLoginDirectory.jsx';
 import { AutomobileEmployeeDashboard } from '../features/categories/automobile/AutomobileEmployeeDashboard.jsx';
 import EmployeeList from '../features/employee-management/pages/admin/employees/EmployeeList.jsx';
 import EmployeeGroupsPage from '../features/employee-management/pages/admin/employees/EmployeeGroupsPage.jsx';
@@ -84,6 +91,7 @@ import { commonRoutes, retailRoutes } from './retailRoutes.jsx';
 import { schoolRoutes } from './schoolRoutes.jsx';
 import { AdminProtectedRoute, GlobalErrorReporter, LegacyHashRedirect, ProtectedRoute, ProtectedShell, PublicRoute } from './RouteGuards.jsx';
 import { getLastRoute } from './routeStorage.js';
+import '../features/employee-management/employeeTheme.css';
 
 // Rendered inside <BrowserRouter>, so useLocation() re-runs this on clean URL navigation,
 // keeping category-specific route branches fresh without needing a full page reload.
@@ -189,6 +197,7 @@ export function FullAppRoutes() {
       <Route path="/platform-admin" element={<ProtectedRoute><PlatformAdminPage /></ProtectedRoute>} />
 
       <Route element={<ProtectedShell />}>
+        <Route path="/email-setup" element={<BusinessEmailSetupPage />} />
         <Route index element={<Navigate to="/login" replace />} />
         <Route path="/dashboard" element={category === 'finance' ? <Navigate to="/finance/dashboard" replace /> : category === 'hotel' ? <HotelDashboardPage /> : hasRetailModules ? <AutomobileDashboardPage /> : <DashboardPage />} />
 
@@ -200,11 +209,15 @@ export function FullAppRoutes() {
         <Route path="/employee-management/employees/:id" element={employeeManagementPage(<EmployeeProfile />)} />
         <Route path="/employee-management/employees/:id/documents" element={employeeManagementPage(<EmployeeDocuments />)} />
         <Route path="/employee-management/attendance" element={useAutomobileLayout ? <AutomobileAttendancePage /> : employeeManagementPage(<TodayAttendance />)} />
+        <Route path="/employee-management/updates" element={employeeManagementPage(<EmployeeUpdates />)} />
         <Route path="/employee-management/leave" element={useAutomobileLayout ? <AutomobileLeavePage /> : employeeManagementPage(<LeaveRequests />)} />
         <Route path="/employee-management/leave/permissions" element={employeeManagementPage(<EmployeePermissions admin />)} />
         <Route path="/employee-management/payroll" element={useAutomobileLayout ? <AutomobilePayrollPage /> : employeeManagementPage(<PayrollProcessing />)} />
-        <Route path="/employee-management/reports" element={<Navigate to="/employee-management/dashboard" replace />} />
-        <Route path="/employee-management/settings" element={<Navigate to="/employee-management/dashboard" replace />} />
+        <Route path="/employee-management/reports" element={employeeManagementPage(<EmployeeReports />)} />
+        <Route path="/employee-management/notifications" element={employeeManagementPage(<EmployeeNotifications admin />)} />
+        <Route path="/employee-management/work" element={employeeManagementPage(<WorkManagement admin />)} />
+        <Route path="/employee-management/settings" element={employeeManagementPage(<EmployeeLoginSettings />)} />
+        <Route path="/employee-management/login-links" element={employeeManagementPage(<EmployeeLoginLinksPage />)} />
         <Route path="/employee-management/attendance/monthly" element={employeeManagementPage(<AdminMonthlyAttendance />)} />
         <Route path="/employee-management/attendance/corrections" element={employeeManagementPage(<CorrectionRequests />)} />
         <Route path="/employee-management/attendance/reports" element={employeeManagementPage(<AttendanceReports />)} />

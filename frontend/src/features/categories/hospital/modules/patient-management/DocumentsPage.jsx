@@ -1,3 +1,4 @@
+import { notify } from '../../../../../services/notifications.js';
 import { BulkDeleteList, BulkDeleteItem } from '../../../../../components/forms/BulkDeleteTable.jsx';
 import { deleteModuleRecord } from '../../../../../services/moduleRecordsService.js';
 import { useMemo, useState } from 'react';
@@ -190,7 +191,7 @@ export function DocumentsPage() {
   }
 
   function viewDocument(document) {
-    window.alert(`${document.data?.name || 'Document'}\n${document.data?.fileName || 'No file attached'}`);
+    notify(`${document.data?.name || 'Document'}\n${document.data?.fileName || 'No file attached'}`);
   }
 
   function downloadDocument(document) {
