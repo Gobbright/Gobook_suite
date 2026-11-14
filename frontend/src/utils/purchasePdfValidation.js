@@ -9,7 +9,17 @@ export function purchaseImportIssues(data) {
     const item = index + 1;
     if (/^(?:category|sub\s*category|brand|material|supplier|vendor|hsn|gstin|sub\s*total|grand\s*total)\s*:/i.test(row.description || '')) issues.push({ row: index, fields: ['description'], message: `Item ${item}: a metadata label was read as a product name. Confirm the parent product.` });
     if (row.uncertainFields?.length) issues.push({ row: index, fields: row.uncertainFields, message: `Item ${item}: confirm the uncertain ${row.uncertainFields.join(', ')} fields against the PDF.` });
-    if (!['qty', 'rate', 'discount', 'gstRate'].every((field) => knownNumber(row[field]))) { complete = false; continue; }
+    const missing = ['qty', 'rate', 'discount', 'gstRate'].filter((field) => !knownNumber(row[field]));
+    if (missing.length) {
+      complete = false;
+      issues.push({ row: index, fields: missing, message: `Item ${item}: ${missing.map(field => ({ qty: 'quantity', rate: 'purchase rate', discount: 'discount', gstRate: 'GST rate' })[field]).join(', ')} ${missing.length === 1 ? 'is' : 'are'} missing. Confirm the printed values before applying.` });
+      continue;
+    }
+    if (Number(row.qty) <= 0 || Number(row.rate) <= 0) {
+      complete = false;
+      issues.push({ row: index, fields: ['qty', 'rate'].filter(field => Number(row[field]) <= 0), message: `Item ${item}: quantity and purchase rate must be greater than zero.` });
+      continue;
+    }
     const gross = Number(row.qty) * Number(row.rate);
     const discount = row.discountType === 'amount' ? Number(row.discount) : gross * Number(row.discount) / 100;
     const net = gross - discount;

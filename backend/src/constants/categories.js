@@ -37,12 +37,10 @@ export const RETAIL_SUBCATEGORY_LABELS = {
   'business-specialty-retail': 'Business & Specialty Retail',
 };
 
-// Backend modules that are only reachable by specific categories.
-// Modules not listed here (gst, accounting, crm, inventory, hr-payroll, more-modules,
-// settings, dashboard, ai, search) are common to every category.
+// Consumer billing uses the shared sales engine for every supported business.
+export const COMMON_CATEGORY_MODULES = ['sales'];
+
 export const EXCLUSIVE_MODULES_BY_CATEGORY = {
-  retail: ['sales'],
-  automobile: ['sales'],
-  hospital: ['hospital', 'sales'],
+  hospital: ['hospital'],
   finance: ['finance'],
 };

@@ -21,7 +21,7 @@ export function filterReconciliation(rows, filters) {
     && [row.gstin, row.supplier].join(' ').toLowerCase().includes((filters.party || '').trim().toLowerCase())
     && [row.invoiceNo, row.supplier, row.gstin].join(' ').toLowerCase().includes((filters.search || '').trim().toLowerCase()));
 }
-export function parseReconciliationCsv(text) {
+export function parseReconciliationCsv(text, required = ['invoiceno', 'gstin', 'itcgstr2b']) {
   const records = []; let row = []; let cell = ''; let quoted = false;
   const source = text.replace(/^\uFEFF/, '');
   for (let i = 0; i < source.length; i++) {
@@ -34,8 +34,38 @@ export function parseReconciliationCsv(text) {
   if (quoted) throw new Error('CSV contains an unclosed quoted field.');
   row.push(cell.trim()); if (row.some(Boolean)) records.push(row);
   const headers = (records.shift() || []).map((header) => header.toLowerCase());
-  if (!['invoiceno', 'gstin', 'itcgstr2b'].every((key) => headers.includes(key))) throw new Error('CSV headers must include invoiceNo,gstin,itcGstr2b.');
+  if (!required.every((key) => headers.includes(key))) throw new Error(`CSV headers must include ${required.join(',')}.`);
   return records.map((values) => Object.fromEntries(headers.map((header, i) => [header, values[i] || ''])));
+}
+export function parseWorkspaceImport(text, filename = '') {
+  let records;
+  if (filename.toLowerCase().endsWith('.json')) {
+    const parsed = JSON.parse(text);
+    records = Array.isArray(parsed) ? parsed : parsed.records;
+    if (!Array.isArray(records)) throw new Error('Use a normalized JSON array of invoice records. Raw portal JSON must be converted to the supplied template first.');
+    records = records.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key.toLowerCase(), value])));
+  } else records = parseReconciliationCsv(text, ['invoiceno', 'gstin']);
+  const numeric = value => {
+    if (value == null || value === '') return null;
+    const amount = Number(String(value).replaceAll(',', ''));
+    if (!Number.isFinite(amount)) throw new Error('Import contains an invalid numeric amount.');
+    return amount;
+  };
+  return records.map(row => ({ invoiceNo: row.invoiceno, gstin: row.gstin || '', supplier: row.supplier || row.name || '', date: row.date || '', period: row.period || '', taxable: numeric(row.taxable), gst: numeric(row.gst ?? row.itcgstr2b), igst: numeric(row.igst), cgst: numeric(row.cgst), sgst: numeric(row.sgst), cess: numeric(row.cess), statementEligibility: row.statementeligibility || 'unknown' }));
+}
+export function filterWorkspace(rows, filters) {
+  return rows.filter(row => {
+    const identity = row.book || row.portal;
+    const text = [identity.supplier, identity.gstin, identity.invoiceNo, row.portal?.invoiceNo, row.reviewNote, row.eligibilityNote].join(' ').toLowerCase();
+    return (!filters.search || text.includes(filters.search.trim().toLowerCase()))
+      && (!filters.exceptions || row.status !== 'matched' || row.duplicate)
+      && (!filters.status || row.status === filters.status)
+      && (!filters.party || identity.gstin === filters.party || identity.supplier === filters.party)
+      && (!filters.eligibility || row.eligibility === filters.eligibility)
+      && (!filters.resolution || row.resolution === filters.resolution)
+      && (!filters.duplicates || row.duplicate)
+      && (!filters.difference || Math.max(Math.abs(row.gstDifference || 0), Math.abs(row.taxableDifference || 0)) >= Number(filters.difference));
+  });
 }
 export function importReconciliationCsv(entries, text, period) {
   const records = parseReconciliationCsv(text); const seen = new Set(); const updates = new Map(); const skipped = [];

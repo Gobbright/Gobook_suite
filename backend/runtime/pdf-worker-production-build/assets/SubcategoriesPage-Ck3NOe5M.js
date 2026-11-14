@@ -1,0 +1,1 @@
+import{t as e}from"./SubcategoriesPage-CovtggiS.js";export{e as SubcategoriesPage};

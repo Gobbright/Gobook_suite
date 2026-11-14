@@ -5,6 +5,8 @@ import { assertConvertibleQuotation } from '../../../../services/quotationConver
 import { assertWorkflowPermission } from './lifecycleController.js';
 import { atomicInventoryHandler } from '../../../../services/inventoryTransaction.js';
 import { Invoice } from '../../../../models/Invoice.js';
+import { dynamicSalesReport } from '../shared/dynamicSalesReport.js';
+import { assertBillingCustomerMobile } from '../../../../services/customerMobile.js';
 import { createSupplierReturn, updateSupplierReturn, deleteSupplierReturn } from '../supplier-return/supplierReturnController.js';
 import { createSalesReturn, updateSalesReturn, deleteSalesReturn } from '../sales-return/salesReturnController.js';
 import { Payment } from '../../../../models/Payment.js';
@@ -176,6 +178,7 @@ export async function getNextNumber(req, res, next) {
 // GET /api/sales/invoices
 export async function listInvoices(req, res, next) {
   try {
+    if (req.query.report) return await dynamicSalesReport(req, res);
     const { documentType, page = 1, limit = 50 } = req.query;
     const baseDocumentType = documentType || { $in: ['invoice', 'bill-of-supply'] };
     const includePayment = isBillableDocType(documentType);
@@ -226,6 +229,7 @@ async function createInvoiceHandler(req, res, next) {
   if (req.body.documentType === 'supplier-return') return createSupplierReturn(req, res, next);
   try {
     let payload = normalizeInvoicePayload(stripWorkflowFields(req.body));
+    assertBillingCustomerMobile(payload);
     assertAutomobileBill(payload, req.user.category);
     assertAutomobileQuotation(payload, req.user.category);
     if (req.user.category === 'automobile' && payload.documentType === 'quotation') {
@@ -271,6 +275,7 @@ async function updateInvoiceHandler(req, res, next) {
     let payload = normalizeInvoicePayload(stripWorkflowFields(req.body));
     const existing = await Invoice.findOne(await branchScopedQuery(req, { model: Invoice, ownerField: 'userId' }, { _id: req.params.id }));
     if (!existing) return next(httpError(404, 'Invoice not found'));
+    assertBillingCustomerMobile({ ...existing.toObject(), ...payload, extra: { ...existing.extra, ...payload.extra } });
     assertAutomobileBill({ ...existing.toObject(), ...payload }, req.user.category);
     assertAutomobileQuotation({ ...existing.toObject(), ...payload }, req.user.category);
     if (req.user.category === 'automobile' && existing.documentType === 'quotation') Object.assign(payload, { advanceReceived: 0, paymentMethod: '', paymentSplits: [] });

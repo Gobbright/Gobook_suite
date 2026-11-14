@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-sLPvdpSW.js";import{t}from"./useAutomobileListingLayout-DpVaq73f.js";var n=e();function r({children:e}){return t()?(0,n.jsx)(`div`,{className:`auto-inventory-list`,children:e}):e}export{r as InventoryListLayout};

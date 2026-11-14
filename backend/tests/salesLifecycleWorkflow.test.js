@@ -1,3 +1,4 @@
+import { CATEGORIES } from '../src/constants/categories.js';
 import assert from 'node:assert/strict';
 import test, { afterEach, mock } from 'node:test';
 import mongoose from 'mongoose';
@@ -678,4 +679,42 @@ test('missing original stock movements prevent cancellation from inventing stock
   assert.equal(result.error.statusCode, 409);
   assert.equal(db.state().stock, 5);
   assert.equal(db.state().invoices[0].lifecycleStatus, 'posted');
+});
+
+for (const category of CATEGORIES) {
+  test(`${category} B2C bills post, edit and delete stock through the shared lifecycle`, async () => {
+    const db = setup();
+    const extra = { billingMode: 'b2c', invoicePrintFormat: 'thermal80' };
+    const customer = { name: 'Customer', phone: '9876543210' };
+    const saved = await call(createInvoice, { category, body: saleBody({ extra, customer }) });
+    assert.equal(saved.error, undefined, saved.error?.stack);
+    assert.equal(db.state().stock, 5);
+    assert.equal(saved.result.extra.billingMode, 'b2c');
+    const updated = await call(updateInvoice, { category, id: saved.result._id, body: saleBody({ extra, customer, items: [{ ...saved.result.items[0], qty: 3 }], totals: { finalTotal: 300 } }) });
+    assert.equal(updated.error, undefined, updated.error?.stack);
+    assert.equal(db.state().stock, 7);
+    assert.equal(db.state().outgoing.length, 1);
+    assert.equal((await call(deleteInvoice, { category, id: saved.result._id })).error, undefined);
+    assert.equal(db.state().stock, 10);
+    assert.equal(db.state().outgoing.length, 0);
+  });
+}
+
+test('billing mobile validation rejects missing numbers before creating or editing stock records', async () => {
+  for (const billingMode of ['b2b', 'b2c']) {
+    const db = setup();
+    const extra = { billingMode };
+    const rejected = await call(createInvoice, { body: saleBody({ extra }) });
+    assert.equal(rejected.error.statusCode, 400);
+    assert.match(rejected.error.message, /mobile number is required/);
+    assert.equal(db.state().invoices.length, 0);
+    assert.equal(db.state().stock, 10);
+    const saved = await call(createInvoice, { body: saleBody({ extra, customer: { name: 'Customer', phone: '9876543210' } }) });
+    assert.equal(saved.error, undefined);
+    const edited = await call(updateInvoice, { id: saved.result._id, body: { customer: { name: 'Customer', phone: '' } } });
+    assert.equal(edited.error.statusCode, 400);
+    assert.equal(db.state().stock, 5);
+    assert.equal(db.state().invoices[0].customer.phone, '9876543210');
+    mock.restoreAll();
+  }
 });

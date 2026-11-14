@@ -1,30 +1,19 @@
+import { lazyPage } from '../../../../../../routes/lazyPage.jsx';
 import { DocumentQuickActions } from '../../../../../../components/forms/DocumentQuickActions.jsx';
 import { FashionB2CInvoice } from './FashionB2CInvoice.jsx';
-import { PurchasePdfImport } from './PurchasePdfImport.jsx';
 import { DocumentSummaryCard } from '../../../../../../components/forms/DocumentSummaryCard.jsx';
 import { creditLine, creditPrintDocument } from '../../../../automobile/automobileCreditNotes.js';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useFocusTrap } from '../../../../../../hooks/useFocusTrap.js';
-import { BrowserMultiFormatReader } from '@zxing/browser';
-import { BarcodeFormat, DecodeHintType } from '@zxing/library';
-import {
-  Document as PdfDocument,
-  Page as PdfPage,
-  Rect as PdfRect,
-  StyleSheet as PdfStyleSheet,
-  Svg as PdfSvg,
-  Text as PdfText,
-  View as PdfView,
-  pdf,
-} from '@react-pdf/renderer';
-import { ArrowLeft, ArrowRightLeft, Barcode, Camera, Calendar, CheckCircle2, ChevronDown, Eye, FileCheck, FileMinus, FilePlus, FileText, ClipboardList, Lock, Menu, Package, Pencil, Pill, Plus, Printer, Receipt, Route, Save, Search, Send, ShoppingCart, Tag, Trash2, Truck, User, UserPlus, X, Zap } from 'lucide-react';
+
+import { ArrowLeft, ArrowRightLeft, Barcode, Camera, Calendar, CheckCircle2, ChevronDown, Download, Eye, FileCheck, FileMinus, FilePlus, FileText, ClipboardList, Lock, Mail, Menu, MessageSquare, Package, Pencil, Pill, Plus, Printer, Receipt, Route, Save, Search, Send, ShoppingCart, Tag, Trash2, Truck, User, UserPlus, X, Zap } from 'lucide-react';
 import { formatCurrency } from '../../../../../../utils/formatCurrency.js';
 import { numberToWords } from '../../../../../../utils/numberToWords.js';
+import { customerMobileDigits, customerMobileError } from '../../../../../../utils/customerMobile.js';
 import { api, SERVER_ORIGIN } from '../../../../../../services/api.js';
 import { useKeyboardMode } from '../../../../../../app/KeyboardModeContext.jsx';
 import { documentConfigs } from '../documentConfigs.js';
-import { DocumentPreviewModal } from './DocumentPreviewModal.jsx';
 import { SupplierReturnPurchase } from './SupplierReturnPurchase.jsx';
 import { SalesReturnInvoice } from './SalesReturnInvoice.jsx';
 import { CalculatorPopup } from './CalculatorPopup.jsx';
@@ -32,7 +21,6 @@ import { MOBILE_SHOW_BILLING_FORM_EVENT } from '../../../../../../components/lay
 import { SelectDropdown } from '../../../../../../components/forms/SelectDropdown.jsx';
 import { AutocompleteInput } from '../../../../../../components/forms/AutocompleteInput.jsx';
 import { HsnCodeInput } from '../../../../../../components/forms/HsnCodeInput.jsx';
-import { ProductModal } from '../../../../common/modules/inventory/ProductsPage.jsx';
 import { useCurrentUser } from '../../../../../../hooks/useCurrentUser.js';
 import '../../../../automobile/automobilePurchaseForms.css';
 import { isAutomobileInvoice, validateAutomobileBill } from '../../../../automobile/automobileSales.js';
@@ -40,6 +28,10 @@ import { documentPaymentRows } from './documentPayments.js';
 import { quotationStatus, validateQuotationDetails } from '../../../../automobile/automobileQuotations.js';
 import { validateReturnRequest } from '../../../../automobile/automobileSalesReturns.js';
 import { challanEditable, validateChallanForm } from '../../../../automobile/automobileChallans.js';
+
+const PurchasePdfImport = lazyPage(() => import('./PurchasePdfImport.jsx'), 'PurchasePdfImport');
+const DocumentPreviewModal = lazyPage(() => import('./DocumentPreviewModal.jsx'), 'DocumentPreviewModal');
+const ProductModal = lazyPage(() => import('../../../../common/modules/inventory/ProductsPage.jsx'), 'ProductModal');
 
 const DOC_ICON_MAP = {
   ArrowRightLeft, ClipboardList, FileCheck, FileMinus, FilePlus, FileText,
@@ -71,9 +63,6 @@ const PURCHASE_LABEL_CODE39_PATTERNS = {
   '/': 'nwnwnnnwn', '+': 'nwnnnwnwn', '%': 'nnnwnwnwn', '*': 'nwnnwnwnn',
 };
 
-const MM_TO_PT = 72 / 25.4;
-const mm = (value) => value * MM_TO_PT;
-const BARCODE_LABEL_PAGE_SIZE = [mm(80), mm(24)];
 
 function normalizePurchaseLabelBarcode(value) {
   const raw = String(value || '').trim().toUpperCase();
@@ -105,115 +94,6 @@ function PurchaseLabelBarcode({ value, height = 34 }) {
     <svg width="260" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ display: 'block', shapeRendering: 'crispEdges' }}>
       {bars.map((bar) => <rect key={bar.key} x={bar.x} y={bar.y} width={bar.width} height={bar.height} fill="#111827" />)}
     </svg>
-  );
-}
-
-function PurchaseLabelPdfBarcode({ value }) {
-  const height = 32;
-  const { bars, width } = code39BarRects(value, height);
-  return (
-    <PdfSvg width={mm(31)} height={mm(8)} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-      {bars.map((bar) => (
-        <PdfRect key={bar.key} x={bar.x} y={bar.y} width={bar.width} height={bar.height} fill="#111827" />
-      ))}
-    </PdfSvg>
-  );
-}
-
-const purchaseBarcodePdfStyles = PdfStyleSheet.create({
-  page: {
-    backgroundColor: '#ffffff',
-    flexDirection: 'row',
-    paddingTop: mm(2),
-    paddingRight: mm(2),
-    paddingBottom: mm(2),
-    paddingLeft: mm(2),
-  },
-  label: {
-    width: mm(35),
-    height: mm(18.5),
-    borderWidth: 0.75,
-    borderColor: '#cbd5e1',
-    borderRadius: 0,
-    padding: mm(1.2),
-    color: '#111827',
-    fontFamily: 'Helvetica',
-    overflow: 'hidden',
-  },
-  labelGap: {
-    marginRight: mm(3),
-  },
-  top: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    minHeight: mm(4.8),
-  },
-  titleWrap: {
-    flexGrow: 1,
-    flexShrink: 1,
-    paddingRight: mm(1),
-  },
-  name: {
-    fontSize: 6.4,
-    fontWeight: 700,
-    lineHeight: 1.05,
-  },
-  meta: {
-    marginTop: mm(0.2),
-    color: '#475569',
-    fontSize: 4.8,
-    lineHeight: 1.05,
-  },
-  price: {
-    flexShrink: 0,
-    fontSize: 6.4,
-    fontWeight: 700,
-    lineHeight: 1,
-  },
-  barcode: {
-    alignItems: 'center',
-    marginTop: mm(0.8),
-  },
-  code: {
-    marginTop: mm(0.4),
-    color: '#475569',
-    width: '70%',
-    alignSelf: 'center',
-    fontSize: 6.5,
-    letterSpacing: 0.35,
-    lineHeight: 1,
-    textAlign: 'center',
-  },
-});
-
-function PurchaseBarcodePdfDocument({ rows = [] }) {
-  return (
-    <PdfDocument title="Purchase Barcode Labels">
-      {chunkPurchaseBarcodePages(rows).map((pageRows, pageIndex) => (
-        <PdfPage key={`barcode-pdf-page-${pageIndex}`} size={BARCODE_LABEL_PAGE_SIZE} style={purchaseBarcodePdfStyles.page}>
-          {pageRows.map((row, rowIndex) => {
-            const barcodeVal = row.barcode || '';
-            const price = purchaseLabelPrice(row);
-            return (
-              <PdfView key={row.printKey || `${pageIndex}-${rowIndex}`} style={[purchaseBarcodePdfStyles.label, rowIndex === 0 && pageRows.length > 1 ? purchaseBarcodePdfStyles.labelGap : null]}>
-                <PdfView style={purchaseBarcodePdfStyles.top}>
-                  <PdfView style={purchaseBarcodePdfStyles.titleWrap}>
-                    <PdfText style={purchaseBarcodePdfStyles.name}>{row.description || '-'}</PdfText>
-                    <PdfText style={purchaseBarcodePdfStyles.meta}>{purchaseLabelVariantText(row)}</PdfText>
-                  </PdfView>
-                  {price ? <PdfText style={purchaseBarcodePdfStyles.price}>{price}</PdfText> : null}
-                </PdfView>
-                <PdfView style={purchaseBarcodePdfStyles.barcode}>
-                  <PurchaseLabelPdfBarcode value={barcodeVal} />
-                  <PdfText style={purchaseBarcodePdfStyles.code}>{normalizePurchaseLabelBarcode(barcodeVal)}</PdfText>
-                </PdfView>
-              </PdfView>
-            );
-          })}
-        </PdfPage>
-      ))}
-    </PdfDocument>
   );
 }
 
@@ -1138,7 +1018,8 @@ function openAddProductForBarcode(barcode) {
   window.location.assign(url);
 }
 
-const CAMERA_BARCODE_FORMATS = [
+function createZxingHints(BarcodeFormat, DecodeHintType) {
+  const formats = [
   BarcodeFormat.CODE_128,
   BarcodeFormat.CODE_39,
   BarcodeFormat.CODE_93,
@@ -1150,10 +1031,8 @@ const CAMERA_BARCODE_FORMATS = [
   BarcodeFormat.CODABAR,
   BarcodeFormat.QR_CODE,
 ];
-
-function createZxingHints() {
   const hints = new Map();
-  hints.set(DecodeHintType.POSSIBLE_FORMATS, CAMERA_BARCODE_FORMATS);
+  hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
   hints.set(DecodeHintType.TRY_HARDER, true);
   return hints;
 }
@@ -1215,7 +1094,9 @@ function MobileBarcodeScanner({ open, onClose, onDetected, status, unknownCode, 
         };
 
         try {
-          const reader = new BrowserMultiFormatReader(createZxingHints(), {
+          const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([import('@zxing/browser'), import('@zxing/library')]);
+          if (cancelled) return;
+          const reader = new BrowserMultiFormatReader(createZxingHints(BarcodeFormat, DecodeHintType), {
             delayBetweenScanAttempts: 100,
             delayBetweenScanSuccess: 700,
           });
@@ -1374,7 +1255,45 @@ function MobileBarcodeScanner({ open, onClose, onDetected, status, unknownCode, 
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export function CreateDocumentPage({ documentType = 'invoice', invoiceId }) {
+function buildProductSearchOptions(products, itemType) {
+    const optionByDescription = new Map();
+    for (const product of (itemType === 'All Items' ? products : products.filter(product => (product.itemType === 'Service' ? 'Service' : 'Product') === itemType))) {
+      const description = String(product.description || '').trim();
+      if (!description) continue;
+      const variants = (product.variants || []).map(variantDisplayName).filter(Boolean);
+      const variantLabel = variantColumnLabel(product).toLowerCase();
+      const option = {
+        value: description,
+        label: description,
+        badge: product.productType === 'Bundle' ? 'Bundle / Kit' : variants.length ? `${variants.length} ${variantLabel}${variants.length > 1 ? 's' : ''}` : productBillingTypeLabel(product),
+        searchText: [
+          description,
+          product.code,
+          product.barcode,
+          product.hsn,
+          product.brand,
+          product.category,
+          product.modelNumber,
+          product.serialNumber,
+          product.warrantyPeriod,
+          product.serviceType,
+          product.technician,
+          product.productType,
+          ...productBundleSearchTerms(product),
+          ...variants,
+          ...variants.map((variant) => `${variant} ${description}`),
+        ].filter(Boolean).join(' '),
+      };
+      const existing = optionByDescription.get(description);
+      if (!existing || (variants.length && !existing.variantCount)) {
+        optionByDescription.set(description, { ...option, variantCount: variants.length });
+      }
+    }
+    return Array.from(optionByDescription.values()).map(({ variantCount: _variantCount, ...option }) => option);
+  }
+
+
+export function CreateDocumentPage({ documentType = 'invoice', invoiceId, defaultBillingMode = 'b2b' }) {
   const currentUser = useCurrentUser();
   const isAutomobileSale = isAutomobileInvoice(currentUser?.category, documentType);
   const isAutomobileQuotation = currentUser?.category === 'automobile' && documentType === 'quotation';
@@ -1409,7 +1328,7 @@ export function CreateDocumentPage({ documentType = 'invoice', invoiceId }) {
 
   const [items, setItems]               = useState([]);
   const [supplyType, setSupplyType]     = useState('intrastate');
-  const [selectedPayment, setSelectedPayment] = useState(isAutomobileSale ? 'cash' : null);
+  const [selectedPayment, setSelectedPayment] = useState(isAutomobileSale || defaultBillingMode === 'b2c' ? 'cash' : null);
   const [paymentData, setPaymentData]   = useState({ chequeNo: '',
     amount: '', date: defaultInvoiceDate, notes: '',
     upiId: '', customerPhone: '', amountReceived: '',
@@ -1434,6 +1353,7 @@ export function CreateDocumentPage({ documentType = 'invoice', invoiceId }) {
   });
 
   const [docExtra, setDocExtra] = useState({
+    billingMode: defaultBillingMode,
     validTill: isAutomobileQuotation ? addDaysInput(defaultInvoiceDate, 7) : '', expectedDelivery: '', deliveryAddress: '',
     originalInvoiceNo: '', originalInvoiceDate: '', reason: '',
     costCenter: '',
@@ -1464,7 +1384,7 @@ export function CreateDocumentPage({ documentType = 'invoice', invoiceId }) {
   const editorSubcategory = editorSettings?.retailSubcategory || currentUser?.retailSubcategory || bizSettings.retailSubcategory;
   const isElectronicsRetail = currentUser?.category === 'automobile' || editorSubcategory === ELECTRONICS_RETAIL_SUBCATEGORY;
   const isFashionRetail = !isElectronicsRetail && isFashionRetailSubcategory(editorSubcategory);
-  const supportsB2CInvoice = (isFashionRetail || isElectronicsRetail) && ['invoice', 'bill-of-supply'].includes(documentType);
+  const supportsB2CInvoice = ['invoice', 'bill-of-supply', 'pharmacy-bill'].includes(documentType);
   const isB2CInvoice = supportsB2CInvoice && docExtra.billingMode === 'b2c';
   const billPrintFormat = documentType === 'purchase-entry' ? 'normal' : isB2CInvoice ? 'thermal80' : docExtra.invoicePrintFormat || bizSettings.invoicePrintFormat || 'normal';
   const previewBizSettings = useMemo(
@@ -1542,6 +1462,9 @@ export function CreateDocumentPage({ documentType = 'invoice', invoiceId }) {
   const customerOptionRefs = useRef([]);
   const [productSearch, setProductSearch]       = useState('');
   const [salesItemFilter, setSalesItemFilter]   = useState('Product');
+  // The consumer checkout accepts both stock items and services. All entry paths
+  // (search, scan, keyboard shortcuts) use the same effective filter.
+  const effectiveSalesItemFilter = isB2CInvoice ? 'All Items' : salesItemFilter;
   const [mobileScreen, setMobileScreen] = useState('invoice');
   const [mobileProductQuery, setMobileProductQuery] = useState('');
   const mobileProductInputRef = useRef(null);
@@ -1578,10 +1501,10 @@ export function CreateDocumentPage({ documentType = 'invoice', invoiceId }) {
       }, 500);
     };
 
-    pdf(<PurchaseBarcodePdfDocument rows={purchaseBarcodePrintRowsToPrint} />)
-      .toBlob()
+    import('./purchaseBarcodePdf.jsx')
+      .then(module => cancelled ? null : module.purchaseBarcodePdfBlob(purchaseBarcodePrintRowsToPrint, { code39BarRects, chunkPurchaseBarcodePages, purchaseLabelVariantText, purchaseLabelPrice, normalizePurchaseLabelBarcode }))
       .then((blob) => {
-        if (cancelled) return;
+        if (cancelled || !blob) return;
         objectUrl = URL.createObjectURL(blob);
         printFrame = document.createElement('iframe');
         printFrame.title = 'Purchase barcode labels';
@@ -1637,6 +1560,8 @@ export function CreateDocumentPage({ documentType = 'invoice', invoiceId }) {
   const [newCustomerForm, setNewCustomerForm]   = useState(() => emptyCustomer());
   const [customerSaving, setCustomerSaving]       = useState(false);
   const [customerSaveError, setCustomerSaveError] = useState('');
+  const customerLookupSequence = useRef(0);
+  const [customerLookupLoading, setCustomerLookupLoading] = useState(false);
 
 const [customFields, setCustomFields]         = useState([]);
   const [recurring, setRecurring]               = useState({ enabled: false, frequency: 'monthly', endAfter: '', endDate: '' });
@@ -1682,7 +1607,7 @@ const [customFields, setCustomFields]         = useState([]);
   const pendingQuickItem = useMemo(() => {
     const query = String(productSearch || '').trim();
     if (!query) return null;
-    const filterRows = productsOfType(salesItemFilter);
+    const filterRows = productsOfType(effectiveSalesItemFilter);
     const chosen = findProductByExactEntry(filterRows, query) || findProductByScan(filterRows, query);
     const normalized = chosen ? normalizeProduct(chosen) : null;
     const description = normalized?.description || query;
@@ -1691,7 +1616,7 @@ const [customFields, setCustomFields]         = useState([]);
       id: 'quick-draft',
       productId: normalized?.id || null,
       productCode: normalized?.code || '',
-      itemType: normalized?.itemType || (salesItemFilter === 'Service' ? 'Service' : quickItem.itemType || 'Product'),
+      itemType: normalized?.itemType || (effectiveSalesItemFilter === 'Service' ? 'Service' : quickItem.itemType || 'Product'),
       productType: normalized?.productType || 'Standard',
       description,
       itemDescription: quickItem.itemDescription || normalized?.productDescription || '',
@@ -1714,7 +1639,7 @@ const [customFields, setCustomFields]         = useState([]);
       gstRate: Number(quickItem.gstRate ?? normalized?.gstRate ?? 0),
       __pendingQuick: true,
     };
-  }, [productSearch, products, quickItem, salesItemFilter]);
+  }, [productSearch, products, quickItem, effectiveSalesItemFilter]);
 
   const effectiveItems = useMemo(
     () => hydrateItemsWithCatalogVariantAttrs(items, products),
@@ -1742,6 +1667,10 @@ const [customFields, setCustomFields]         = useState([]);
       if (docExtra.originalInvoiceDate && docMeta.date < docExtra.originalInvoiceDate) errs.invoiceDate = 'Return date cannot precede sales invoice date';
     }
     const effectiveCustomer = getEffectiveCustomer();
+    if (supportsB2CInvoice) {
+      const mobileError = customerMobileError(effectiveCustomer.phone);
+      if (mobileError) errs.customerPhone = mobileError;
+    }
 
     // ── Common (all document types) ──────────────────────────────────────────
     if (!effectiveCustomer.name.trim())
@@ -1856,7 +1785,11 @@ const [customFields, setCustomFields]         = useState([]);
     const tdsAmt       = tds.enabled ? acc.taxable * (tds.rate / 100) : 0;
     const tcsAmt       = tcs.enabled ? invoiceTotal * (tcs.rate / 100) : 0;
     const netPayable   = invoiceTotal - tdsAmt + tcsAmt;
-    const calculatedFinalTotal = Math.round(netPayable);
+    // Supplier bills may explicitly include paise. Keep the calculated cents
+    // in that case; never replace the calculation with the printed amount.
+    const supplierAmount = Number(docExtra.vendorInvoiceAmount);
+    const preservePurchasePaise = documentType === 'purchase-entry' && Number.isFinite(supplierAmount) && Math.abs(supplierAmount - Math.round(supplierAmount)) >= 0.005;
+    const calculatedFinalTotal = preservePurchasePaise ? Math.round(netPayable * 100) / 100 : Math.round(netPayable);
     const manualTotalValue = Number(manualQuotationTotal);
     const manualTotalOverride = documentType === 'quotation'
       && manualQuotationTotal !== ''
@@ -1886,7 +1819,7 @@ const [customFields, setCustomFields]         = useState([]);
     };
   }
 
-  const totals = useMemo(() => calculateTotalsForItems(effectiveItems), [effectiveItems, charges, addDiscount, tds, tcs, advanceAmt, paymentSplitTotal, config.showGst, documentType, manualQuotationTotal, isAutomobileNote]);
+  const totals = useMemo(() => calculateTotalsForItems(effectiveItems), [effectiveItems, charges, addDiscount, tds, tcs, advanceAmt, paymentSplitTotal, config.showGst, documentType, docExtra.vendorInvoiceAmount, manualQuotationTotal, isAutomobileNote]);
   const oldCreditBalance = Math.max(0, Number(docExtra.oldBalance) || 0);
   const receivedNow = Math.max(0, Number(paymentSplitTotal || advanceAmt) || 0);
   const currentInvoiceBalance = Math.max(0, (Number(totals.finalTotal) || 0) - receivedNow);
@@ -1943,17 +1876,21 @@ const [customFields, setCustomFields]         = useState([]);
 
   function updateCustomer(field, value) {
     setCustomer((p) => ({ ...p, [field]: value }));
+    if (field === 'phone' && !customerMobileError(value)) clearError('customerPhone');
     if (field === 'state' && config.showGst) {
       setSupplyType(value === bizState ? 'intrastate' : 'interstate');
     }
   }
 
   function selectCustomer(c) {
+    customerLookupSequence.current += 1;
+    setCustomerLookupLoading(false);
     const normalized = normalizeCustomer(c);
     setCustomer(normalized);
     setNewCustomerForm({ ...emptyCustomer(), ...normalized, _id: normalized._id || '', id: normalized.id || '' });
     if (config.showGst) setSupplyType(normalized.state === bizState ? 'intrastate' : 'interstate');
     clearError('customerName');
+    if (!customerMobileError(normalized.phone)) clearError('customerPhone');
     if (normalized.gstin) clearError('customerGstin');
     setShowCustomerDrop(false);
     setCustomerQuery('');
@@ -2031,6 +1968,7 @@ const [customFields, setCustomFields]         = useState([]);
     setNewCustomerForm((p) => ({ ...p, [field]: value }));
     if (field === 'name' && value.trim()) clearError('customerName');
     if (field === 'gstin' && value.trim()) clearError('customerGstin');
+    if (field === 'phone' && !customerMobileError(value)) clearError('customerPhone');
   }
 
   function updateInvoiceCustomerField(field, value) {
@@ -2042,6 +1980,10 @@ const [customFields, setCustomFields]         = useState([]);
     if (!newCustomerForm.name.trim()) {
       setCustomerSaveError(`${partyLabel} is required`);
       return;
+    }
+    if (supportsB2CInvoice) {
+      const mobileError = customerMobileError(newCustomerForm.phone);
+      if (mobileError) { setCustomerSaveError(mobileError); return; }
     }
     setCustomerSaving(true);
     setCustomerSaveError('');
@@ -2080,6 +2022,62 @@ const [customFields, setCustomFields]         = useState([]);
     } finally {
       setCustomerSaving(false);
     }
+  }
+
+  function updateB2CCustomerSearch(value) {
+    customerLookupSequence.current += 1;
+    setCustomerLookupLoading(false);
+    setCustomerQuery(value);
+    setCustomer(emptyCustomer());
+    setNewCustomerForm(emptyCustomer());
+    clearError('customerPhone');
+  }
+
+  function openB2CCustomerForm(query = customerQuery) {
+    customerLookupSequence.current += 1;
+    setCustomerLookupLoading(false);
+    const value = String(query || '').trim();
+    const isPhone = /^[+\d\s()-]+$/.test(value);
+    setCustomer(emptyCustomer());
+    setCustomerQuery(value);
+    setNewCustomerForm({ ...emptyCustomer(isPhone ? '' : value), phone: isPhone ? value : '' });
+    setCustomerSaveError('');
+    setShowCustomerDrop(false);
+    setShowAddCustomer(true);
+  }
+
+  async function submitB2CCustomer(query) {
+    const value = String(query || '').trim();
+    const isPhone = /^[+\d\s()-]+$/.test(value);
+    if (!value) { setErrors(previous => ({ ...previous, customerPhone: 'Enter a customer mobile number.' })); return; }
+    if (isPhone && customerMobileError(value)) {
+      setErrors(previous => ({ ...previous, customerPhone: customerMobileError(value) }));
+      return;
+    }
+    const digits = isPhone ? customerMobileDigits(value) : '';
+    const sequence = ++customerLookupSequence.current;
+    let match = customers.find(entry => isPhone
+      ? customerMobileDigits(entry.phone) === digits
+      : String(entry.name || '').trim().toLowerCase() === value.toLowerCase());
+    if (isPhone && !match) {
+      setCustomerLookupLoading(true);
+      try {
+        const result = await api.listCustomers(digits);
+        if (sequence !== customerLookupSequence.current) return;
+        match = (Array.isArray(result) ? result : result?.data || []).find(entry => customerMobileDigits(entry.phone) === digits);
+        if (match) setCustomers(previous => [...previous.filter(entry => String(entry._id || entry.id) !== String(match._id || match.id)), normalizeCustomer(match)]);
+      } catch (error) {
+        if (sequence === customerLookupSequence.current) setErrors(previous => ({ ...previous, customerPhone: error.message || 'Could not look up this mobile number. Try again.' }));
+        return;
+      } finally {
+        if (sequence === customerLookupSequence.current) setCustomerLookupLoading(false);
+      }
+    }
+    if (sequence !== customerLookupSequence.current) return;
+    if (match) {
+      selectCustomer(match);
+      requestAnimationFrame(() => document.querySelector('[data-fkey="product"]')?.focus());
+    } else openB2CCustomerForm(value);
   }
 
   async function rememberCustomerForPhone(customerData) {
@@ -2186,6 +2184,56 @@ const [customFields, setCustomFields]         = useState([]);
     }
   }
   function updateExtra(field, value) { setDocExtra((p) => ({ ...p, [field]: value })); }
+  // New B2B and B2C bills are independent drafts. Editing a saved bill still
+  // changes the mode of that same document without replacing its contents.
+  const billingDrafts = useRef({});
+  const billingDraftValues = {
+    items, customer, newCustomerForm, customerQuery, billType, supplyType,
+    docMeta, docExtra, selectedPayment, paymentData, paymentSplits,
+    charges, addDiscount, tds, tcs, advanceAmt, sameShipping, shipping,
+    notes, terms, internalNotes, customFields, recurring, savedInvoiceId,
+    invoiceLifecycle, productSearch, quickItem, quickPickerSelections, quickEditItemId,
+  };
+  const initialBillingDraft = useRef(billingDraftValues);
+
+  function switchBillingMode(mode) {
+    if (mode === docExtra.billingMode || saveLoading || invoiceLoading) return;
+    if (invoiceId) {
+      updateExtra('billingMode', mode);
+      return;
+    }
+    billingDrafts.current[docExtra.billingMode] = billingDraftValues;
+    const draft = billingDrafts.current[mode] || {
+      ...initialBillingDraft.current,
+      // Keep the number supplied by the server for a new, unsaved bill.
+      docMeta: { ...initialBillingDraft.current.docMeta, number: docMeta.number },
+      selectedPayment: mode === 'b2c' || isAutomobileSale ? 'cash' : null,
+    };
+    const setters = {
+      items: setItems, customer: setCustomer, newCustomerForm: setNewCustomerForm,
+      customerQuery: setCustomerQuery, billType: setBillType, supplyType: setSupplyType,
+      docMeta: setDocMeta, selectedPayment: setSelectedPayment,
+      paymentData: setPaymentData, paymentSplits: setPaymentSplits,
+      charges: setCharges, addDiscount: setAddDiscount, tds: setTds, tcs: setTcs,
+      advanceAmt: setAdvanceAmt, sameShipping: setSameShipping, shipping: setShipping,
+      notes: setNotes, terms: setTerms, internalNotes: setInternalNotes,
+      customFields: setCustomFields, recurring: setRecurring,
+      savedInvoiceId: setSavedInvoiceId, invoiceLifecycle: setInvoiceLifecycle,
+      productSearch: setProductSearch, quickItem: setQuickItem,
+      quickPickerSelections: setQuickPickerSelections, quickEditItemId: setQuickEditItemId,
+    };
+    Object.entries(setters).forEach(([field, setValue]) => setValue(draft[field]));
+    setDocExtra({ ...draft.docExtra, billingMode: mode });
+    setErrors({});
+    setSaveError('');
+    setBarcodeScanStatus('');
+    setUnknownBarcode('');
+    setShowBarcodeScanner(false);
+    setInlineProductModal(null);
+    setQuickVariantDraft(null);
+    setShowPaymentPopup(false);
+    setShowPaymentMethodPopup(false);
+  }
   function updatePayment(field, value){ setPaymentData((p) => ({ ...p, [field]: value })); }
   function updateSinglePayment(field, value) {
     if (isB2CInvoice && field === 'amount') clearError('payment');
@@ -2972,7 +3020,7 @@ const [customFields, setCustomFields]         = useState([]);
         if (product) product = mergeScannedProduct(product);
       }
       if (!product) {
-        window.location.assign(`/billing/purchase-entry/new?newBarcode=${encodeURIComponent(value)}`);
+        setErrors((prev) => ({ ...prev, quickItem: 'Barcode not found. Add this item in Products before billing it.' }));
         return;
       }
       const normalized = normalizeProduct(product);
@@ -3030,7 +3078,7 @@ const [customFields, setCustomFields]         = useState([]);
     setUnknownBarcode('');
     setMobileProductQuery(value);
 
-    const product = await resolveProductByScan(value, salesItemFilter);
+    const product = await resolveProductByScan(value, effectiveSalesItemFilter);
     if (product) {
       const normalized = normalizeProduct(product);
       const existingItem = items.find((item) => (
@@ -3062,41 +3110,12 @@ const [customFields, setCustomFields]         = useState([]);
     return products.filter((p) => (p.itemType === 'Service' ? 'Service' : 'Product') === wanted);
   }
 
+  const cachedProductSearchOptions = useMemo(() => Object.fromEntries(
+    ['All Items', 'Product', 'Service'].map(type => [type, buildProductSearchOptions(products, type)]),
+  ), [products]);
+
   function productSearchOptions(itemType) {
-    const optionByDescription = new Map();
-    for (const product of productsOfType(itemType)) {
-      const description = String(product.description || '').trim();
-      if (!description) continue;
-      const variants = (product.variants || []).map(variantDisplayName).filter(Boolean);
-      const variantLabel = variantColumnLabel(product).toLowerCase();
-      const option = {
-        value: description,
-        label: description,
-        badge: product.productType === 'Bundle' ? 'Bundle / Kit' : variants.length ? `${variants.length} ${variantLabel}${variants.length > 1 ? 's' : ''}` : productBillingTypeLabel(product),
-        searchText: [
-          description,
-          product.code,
-          product.barcode,
-          product.hsn,
-          product.brand,
-          product.category,
-          product.modelNumber,
-          product.serialNumber,
-          product.warrantyPeriod,
-          product.serviceType,
-          product.technician,
-          product.productType,
-          ...productBundleSearchTerms(product),
-          ...variants,
-          ...variants.map((variant) => `${variant} ${description}`),
-        ].filter(Boolean).join(' '),
-      };
-      const existing = optionByDescription.get(description);
-      if (!existing || (variants.length && !existing.variantCount)) {
-        optionByDescription.set(description, { ...option, variantCount: variants.length });
-      }
-    }
-    return Array.from(optionByDescription.values()).map(({ variantCount: _variantCount, ...option }) => option);
+    return cachedProductSearchOptions[itemType === 'All Items' || itemType === 'Service' ? itemType : 'Product'];
   }
 
   function setQuickItemType(type) {
@@ -3171,7 +3190,7 @@ const [customFields, setCustomFields]         = useState([]);
       return;
     }
 
-    const chosen = localScanMatch || await resolveProductByScan(query, salesItemFilter);
+    const chosen = localScanMatch || await resolveProductByScan(query, effectiveSalesItemFilter);
     const target = items.find((item) => !item.description);
 
     if (chosen) {
@@ -3318,7 +3337,7 @@ const [customFields, setCustomFields]         = useState([]);
   }
 
   function prefillQuickItemFromProduct(value) {
-    const chosen = findProductByExactEntry(productsOfType(salesItemFilter), value);
+    const chosen = findProductByExactEntry(productsOfType(effectiveSalesItemFilter), value);
     if (!chosen) return;
     const normalized = normalizeProduct(chosen);
     setQuickItem((prev) => ({
@@ -3346,7 +3365,7 @@ const [customFields, setCustomFields]         = useState([]);
 
   function applyQuickProductSelection(value) {
     prefillQuickItemFromProduct(value);
-    focusQuickProductNext(findProductByExactEntry(productsOfType(salesItemFilter), value));
+    focusQuickProductNext(findProductByExactEntry(productsOfType(effectiveSalesItemFilter), value));
   }
 
   function focusQuickProductNext(product) {
@@ -3401,7 +3420,7 @@ const [customFields, setCustomFields]         = useState([]);
     const query = String(value || '').trim();
     if (!query) return;
 
-    const filterRows = productsOfType(salesItemFilter);
+    const filterRows = productsOfType(effectiveSalesItemFilter);
     const exact = findProductByExactEntry(filterRows, query);
     const localScanMatch = !exact && isLikelyBarcodeScan(query) ? findProductByScan(filterRows, query) : null;
     if (canOpenProductCreationFromQuickEntry && !exact && !localScanMatch && isLikelyBarcodeScan(query)) {
@@ -3410,13 +3429,13 @@ const [customFields, setCustomFields]         = useState([]);
       return;
     }
 
-    if (!['purchase-entry', 'purchase-order'].includes(documentType) && !exact && !localScanMatch && isLikelyBarcodeScan(query)) {
+    if (!isB2CInvoice && !['purchase-entry', 'purchase-order'].includes(documentType) && !exact && !localScanMatch && isLikelyBarcodeScan(query)) {
       openAddProductForBarcode(query);
       setProductSearch('');
       return;
     }
 
-    const scanned = exact ? null : (localScanMatch || await resolveProductByScan(query, salesItemFilter));
+    const scanned = exact ? null : (localScanMatch || await resolveProductByScan(query, effectiveSalesItemFilter));
     const chosen = exact || scanned;
 
     if (chosen) {
@@ -3454,7 +3473,13 @@ const [customFields, setCustomFields]         = useState([]);
       return;
     }
 
-    const filterRows = productsOfType(salesItemFilter);
+    if (isB2CInvoice && (!Number.isFinite(Number(quickItem.qty)) || Number(quickItem.qty) <= 0)) {
+      setErrors(previous => ({ ...previous, quickItem: 'Enter a quantity greater than zero.', quickItemField: 'qty' }));
+      focusQuickItemField('qty');
+      return;
+    }
+
+    const filterRows = productsOfType(effectiveSalesItemFilter);
     const exact = findProductByExactEntry(filterRows, query);
     const localScanMatch = !exact && isLikelyBarcodeScan(query) ? findProductByScan(filterRows, query) : null;
     if (canOpenProductCreationFromQuickEntry && !exact && !localScanMatch && isLikelyBarcodeScan(query)) {
@@ -3463,7 +3488,7 @@ const [customFields, setCustomFields]         = useState([]);
       return;
     }
 
-    if (!['purchase-entry', 'purchase-order'].includes(documentType) && !exact && !localScanMatch && isLikelyBarcodeScan(query)) {
+    if (!isB2CInvoice && !['purchase-entry', 'purchase-order'].includes(documentType) && !exact && !localScanMatch && isLikelyBarcodeScan(query)) {
       // Open synchronously (before any await) — mobile browsers silently
       // block window.open() once a promise/await has broken the chain back
       // to the user's tap/keypress, which left the barcode just sitting in
@@ -3473,8 +3498,13 @@ const [customFields, setCustomFields]         = useState([]);
       return;
     }
 
-    const chosen = exact || localScanMatch || await resolveProductByScan(query, salesItemFilter);
+    const chosen = exact || localScanMatch || await resolveProductByScan(query, effectiveSalesItemFilter);
     const normalized = chosen ? normalizeProduct(chosen) : null;
+    if (isB2CInvoice && !normalized) {
+      setErrors((prev) => ({ ...prev, quickItem: 'Item not found. Select a product or service from your catalog.' }));
+      focusQuickItemField('product');
+      return;
+    }
     if (canUseSalesLifecycle && normalized?.itemType !== 'Service' && normalized?.variants?.length) {
       const model = quickItem.size || entryModel(normalized);
       if (!model || !catalogVariantForItem(normalized, { ...quickItem, size: model })) {
@@ -3567,7 +3597,7 @@ const [customFields, setCustomFields]         = useState([]);
       productCode: normalized?.code || '',
       barcode: overrides.barcode ?? quickItem.barcode ?? normalized?.barcode ?? '',
       variantId: normalized?.variants?.length ? catalogVariantForItem(normalized, { ...quickItem, ...overrides })?._id : undefined,
-      itemType: normalized?.itemType || (salesItemFilter === 'Service' ? 'Service' : quickItem.itemType || 'Product'),
+      itemType: normalized?.itemType || (effectiveSalesItemFilter === 'Service' ? 'Service' : quickItem.itemType || 'Product'),
       productType: normalized?.productType || quickItem.productType || 'Standard',
       description: overrides.description ?? normalized?.description ?? productSearch,
       itemDescription: overrides.itemDescription ?? quickItem.itemDescription ?? normalized?.productDescription ?? '',
@@ -4591,7 +4621,7 @@ const [customFields, setCustomFields]         = useState([]);
       addQuickItem,
       resolveProductByScan,
       products,
-      salesItemFilter,
+      salesItemFilter: effectiveSalesItemFilter,
       keyboardMode,
       focusPartyField,
       showItemTypeControls,
@@ -4840,7 +4870,7 @@ const [customFields, setCustomFields]         = useState([]);
 
   const mobileProductResults = useMemo(() => {
     const query = normalizeScanText(mobileProductQuery);
-    const rows = productsOfType(salesItemFilter);
+    const rows = productsOfType(effectiveSalesItemFilter);
     if (!query) return rows.slice(0, 18);
     return rows.filter((product) => {
       const haystack = [
@@ -4858,7 +4888,7 @@ const [customFields, setCustomFields]         = useState([]);
       ].map(normalizeScanText).join(' ');
       return haystack.includes(query);
     }).slice(0, 18);
-  }, [mobileProductQuery, products, salesItemFilter]);
+  }, [mobileProductQuery, products, effectiveSalesItemFilter]);
 
   function focusMobileProductSearch() {
     window.setTimeout(() => mobileProductInputRef.current?.focus(), 60);
@@ -4879,7 +4909,7 @@ const [customFields, setCustomFields]         = useState([]);
       return;
     }
     if (!query) return;
-    const scanned = await resolveProductByScan(query, salesItemFilter);
+    const scanned = await resolveProductByScan(query, effectiveSalesItemFilter);
     if (scanned) {
       addMobileProduct(scanned);
       return;
@@ -4889,7 +4919,7 @@ const [customFields, setCustomFields]         = useState([]);
       openAddProductForBarcode(query);
       return;
     }
-    setItems((prev) => [...prev, { id: nextItemId.current++, productId: null, productCode: '', itemType: salesItemFilter === 'Service' ? 'Service' : 'Product', productType: 'Standard', description: query, itemDescription: '', hsn: '', brand: '', category: '', subCategory: '', barcode: '', qty: 1, unit: 'Nos', rate: 0, mrp: 0, sellingPrice: 0, discount: 0, discountType: 'percent', gstRate: '' }]);
+    setItems((prev) => [...prev, { id: nextItemId.current++, productId: null, productCode: '', itemType: effectiveSalesItemFilter === 'Service' ? 'Service' : 'Product', productType: 'Standard', description: query, itemDescription: '', hsn: '', brand: '', category: '', subCategory: '', barcode: '', qty: 1, unit: 'Nos', rate: 0, mrp: 0, sellingPrice: 0, discount: 0, discountType: 'percent', gstRate: '' }]);
     setMobileProductQuery('');
     focusMobileProductSearch();
   }
@@ -4909,9 +4939,9 @@ const [customFields, setCustomFields]         = useState([]);
 
   const quickMatchedProduct = useMemo(() => {
     if (!productSearch) return null;
-    const rows = productsOfType(salesItemFilter);
+    const rows = productsOfType(effectiveSalesItemFilter);
     return findProductByExactEntry(rows, productSearch) || findProductByScan(rows, productSearch);
-  }, [productSearch, products, salesItemFilter]);
+  }, [productSearch, products, effectiveSalesItemFilter]);
   const quickProductVariants = quickMatchedProduct?.productType === 'Bundle' || quickMatchedProduct?.itemType === 'Service' ? [] : (quickMatchedProduct?.variants || []);
   const showSalesModelSelector = canUseSalesLifecycle && quickItem.itemType !== 'Service' && quickMatchedProduct?.productType !== 'Bundle';
   const selectedQuickVariant = quickMatchedProduct && catalogVariantForItem(quickMatchedProduct, quickItem);
@@ -4946,9 +4976,6 @@ const [customFields, setCustomFields]         = useState([]);
     extra,
   ].filter(Boolean).join(' ');
   const showItemTypeControls = true;
-  const useSalesReferenceUi = false;
-  const posTaxableAmount = Math.max(0, totals.subtotal - totals.discount - totals.addDiscAmt);
-  const posHalfGst = totals.totalGst / 2;
 
   useEffect(() => {
     if (!brandPicker) return;
@@ -4964,22 +4991,17 @@ const [customFields, setCustomFields]         = useState([]);
     option?.scrollIntoView({ block: 'nearest' });
   }, [brandPicker?.highlighted, brandPicker]);
 
-  useEffect(() => {
-    if (!useSalesReferenceUi) return;
-    setCustomer((prev) => (prev.name ? prev : { ...prev, name: 'Walk-in Customer' }));
-  }, [useSalesReferenceUi]);
-
-  const documentQuickActions = <DocumentQuickActions disabled={saveLoading} actions={[
-    { id: 'print', label: 'Print', onSelect: handlePrintBill },
-    { id: 'whatsapp', label: 'WhatsApp', onSelect: () => {
+  const documentQuickActions = <DocumentQuickActions variant={supportsB2CInvoice ? 'icons' : 'dropdown'} disabled={saveLoading} actions={[
+    { id: 'print', icon: <Printer size={18} />, label: 'Print', onSelect: handlePrintBill },
+    { id: 'whatsapp', icon: <WhatsAppIcon size={18} />, label: 'WhatsApp', onSelect: () => {
       const c = getEffectiveCustomer();
       const text = encodeURIComponent(`${config.title} ${docMeta.number} \u2014 ${formatCurrency(totals.finalTotal)}`);
       const phone = String(c.phone || '').replace(/\D/g, '');
       window.open(`https://wa.me/${phone}?text=${text}`, '_blank', 'noopener');
     } },
-    { id: 'email', label: 'Email', onSelect: () => setShowEmailModal(true) },
-    { id: 'pdf', label: 'Download PDF', onSelect: () => { setDownloadPdfMode(true); setAutoPrintPreview(false); setShowPreview(true); } },
-    { id: 'sms', label: 'SMS', onSelect: () => {
+    { id: 'email', icon: <Mail size={18} />, label: 'Email', onSelect: () => setShowEmailModal(true) },
+    { id: 'pdf', icon: <Download size={18} />, label: 'Download PDF', onSelect: () => { setDownloadPdfMode(true); setAutoPrintPreview(false); setShowPreview(true); } },
+    { id: 'sms', icon: <MessageSquare size={18} />, label: 'SMS', onSelect: () => {
       const c = getEffectiveCustomer();
       const text = encodeURIComponent(`${config.title} ${docMeta.number} \u2014 ${formatCurrency(totals.finalTotal)}`);
       window.open(`sms:${c.phone || ''}?body=${text}`, '_self');
@@ -4998,471 +5020,6 @@ const [customFields, setCustomFields]         = useState([]);
     return (
       <div className="p-4 md:p-7">
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-700">{loadError}</div>
-      </div>
-    );
-  }
-
-  if (useSalesReferenceUi) {
-    return (
-      <div className="document-print-host billing-v2 w-full p-4 md:p-5">
-        {saveError && <p role="alert" className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{saveError}</p>}
-        {showCalculator && <CalculatorPopup onClose={() => setShowCalculator(false)} />}
-
-        <section className="sales-reference-shell flex min-h-[calc(100vh-150px)] w-full max-w-none flex-col overflow-hidden rounded-xl border border-[#dbe4ef] bg-[#f8fbff] shadow-sm">
-          <div className="sales-reference-actionbar flex flex-col gap-3 border-b border-[#e5edf7] bg-white px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-3 pr-5">
-                <span className="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                  <ShoppingCart size={24} />
-                </span>
-                <div>
-                  <h1 className="m-0 text-[20px] font-bold uppercase leading-tight text-[#071936]">Sales / POS</h1>
-                  <p className="m-0 mt-0.5 text-[13px] font-semibold text-[#536173]">Electronics and technology billing</p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setNumberEditing(true)}
-                className="inline-flex h-12 items-center gap-2 rounded-md border border-[#dbe4ef] bg-white px-4 text-[14px] font-bold text-[#0f2757] shadow-sm"
-                title="Edit bill number"
-              >
-                <Receipt size={17} className="text-blue-600" />
-                Bill #{String(docMeta.number || '0001').replace(/\D/g, '').padStart(6, '0')}
-              </button>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-          {documentQuickActions}
-              <button
-                type="button"
-                onClick={() => window.location.assign(LIST_ROUTES[documentType] ?? '/billing/invoice')}
-                className="inline-flex h-12 items-center gap-2 rounded-md border border-[#dbe4ef] bg-white px-5 text-[14px] font-bold text-[#0f2757] shadow-sm"
-                title="Open list page (Alt+V)"
-              >
-                View List <span className="billing-shortcut-key rounded bg-[#eef4ff] px-2 py-1 text-[11px] text-blue-700">Alt+V</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAutoPrintPreview(false); setShowPreview(true); }}
-                className="inline-flex h-12 items-center gap-2 rounded-md border border-[#dbe4ef] bg-white px-5 text-[14px] font-bold text-[#0f2757] shadow-sm"
-                aria-label="Preview (F3)"
-                title="Preview bill (F3)"
-              >
-                <Eye size={17} />
-                <span className="billing-shortcut-key rounded bg-[#eef4ff] px-2 py-1 text-[11px] text-blue-700">F3</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSave()}
-                disabled={saveLoading}
-                className={`app-save-button inline-flex h-12 items-center gap-2 rounded-md border border-blue-600 bg-blue-600 px-5 text-[14px] font-bold text-white shadow-sm disabled:opacity-60${canUseSalesLifecycle ? ' billing-post-invoice-btn' : ''}`}
-                title="Save (F2)"
-              >
-
-                {saveLoading ? 'Saving...' : primarySaveLabel} <span className="rounded bg-blue-500 px-2 py-1 text-[11px] text-white">F2</span>
-              </button>
-              <button type="button" className="billing-cancel-item-btn" onClick={cancelQuickItem}>Cancel</button>
-            </div>
-          </div>
-
-          <div className="sales-reference-customer-panel bg-white px-4 py-4">
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.2fr_1fr_1fr]">
-              <section className="flex flex-col gap-2">
-                <label className="flex items-center gap-2 text-[13px] font-semibold uppercase text-[#111827]">
-                  Customer <span className="text-red-500">*</span>
-                  <button type="button" onClick={focusPartyField} className="inline-flex h-6 w-7 items-center justify-center rounded border border-blue-200 bg-blue-50 text-[14px] font-semibold text-blue-600">+</button>
-                </label>
-                <div className="relative">
-                  <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" />
-                  <input
-                    data-fkey="party"
-                    className="h-10 w-full rounded-md border border-[#dbe4ef] bg-white pl-8 pr-10 text-[13px] text-[#111827] outline-none focus:border-blue-500"
-                    placeholder="Type name / phone / GSTIN and press Enter"
-                    value={getEffectiveCustomer().name}
-                    onChange={(e) => {
-                      updateCustomer('name', e.target.value);
-                      updateNewCustomer('name', e.target.value);
-                      clearError('customerName');
-                    }}
-                  />
-                  <button type="button" onClick={focusPartyField} className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded border border-[#dbe4ef] bg-white text-[14px] font-semibold text-blue-600">+</button>
-                </div>
-                <div className="mt-1 flex flex-col gap-1 text-[12px] text-[#536173]">
-                  <div>Phone: {getEffectiveCustomer().phone || '-'} &nbsp;&nbsp; Email: {getEffectiveCustomer().email || '-'}</div>
-                  <div>GSTIN: {getEffectiveCustomer().gstin || '-'}</div>
-                  <div>State: {getEffectiveCustomer().state || BUSINESS_STATE}</div>
-                </div>
-              </section>
-
-              <section className="flex flex-col gap-2">
-                <label className="text-[13px] font-semibold uppercase text-[#111827]">Billing Address</label>
-                <div className="relative">
-                  <textarea
-                    className="min-h-[92px] w-full resize-y rounded-lg border border-dashed border-[#dbe4ef] bg-[#fafbfe] px-3 py-3 pr-9 text-[13px] text-[#374151] outline-none focus:border-blue-500"
-                    placeholder="Click to add billing address"
-                    value={getEffectiveCustomer().address || ''}
-                    onChange={(e) => updateCustomer('address', e.target.value)}
-                  />
-                  <Pencil size={14} className="pointer-events-none absolute right-3 top-3 text-[#94a3b8]" />
-                </div>
-              </section>
-
-              <section className="flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-2">
-                  <label className="text-[13px] font-semibold uppercase text-[#111827]">Shipping Address</label>
-                  <label className="flex items-center gap-1.5 text-[11px] font-medium uppercase text-[#536173]">
-                    <input type="checkbox" className="h-3.5 w-3.5 accent-blue-600" checked={sameShipping} onChange={(e) => setSameShipping(e.target.checked)} />
-                    Same as billing
-                  </label>
-                </div>
-                {sameShipping ? (
-                  <div className="flex min-h-[92px] items-center rounded-lg border border-dashed border-[#dbe4ef] bg-[#fafbfe] px-3 text-[13px] text-[#94a3b8]">Same as billing address</div>
-                ) : (
-                  <textarea
-                    className="min-h-[92px] w-full resize-y rounded-lg border border-dashed border-[#dbe4ef] bg-[#fafbfe] px-3 py-3 text-[13px] text-[#374151] outline-none focus:border-blue-500"
-                    placeholder="Click to add shipping address"
-                    value={shipping.address}
-                    onChange={(e) => setShipping((p) => ({ ...p, address: e.target.value }))}
-                  />
-                )}
-              </section>
-            </div>
-          </div>
-          <div className="sales-common-workspace grid grid-cols-1 gap-4 bg-[#f8fbff] p-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <section className="sales-reference-card bg-white p-4 shadow-sm">
-              <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div className="w-full max-w-[220px]">
-                  <label className="mb-1.5 block text-[12px] font-semibold uppercase text-[#0f172a]">Item Type</label>
-                  <SelectDropdown
-                    value={salesItemFilter}
-                    onChange={setQuickItemType}
-                    buttonClassName="!h-10 !rounded-md !border-[#dbe4ef] !bg-white !px-3 !text-[13px]"
-                    options={SALES_ITEM_FILTER_OPTIONS}
-                  />
-                </div>
-                <div className="billing-bulk-controls">
-                  <div className="billing-bulk-field billing-discount-field">
-                    <label htmlFor="overall-discount">Discount</label>
-                    <div className="billing-discount-control">
-                      <input
-                        id="overall-discount"
-                        data-fkey="overall-discount"
-                        className="billing-bulk-input"
-                        type="number"
-                        min="0"
-                        max={addDiscount.type === 'percent' ? '100' : undefined}
-                        value={addDiscount.value}
-                        onChange={(e) => setAddDiscount((prev) => ({ ...prev, value: e.target.value }))}
-                        placeholder="0"
-                      />
-                      <SelectDropdown
-                        value={addDiscount.type || 'percent'}
-                        onChange={(v) => setAddDiscount((prev) => ({ ...prev, type: v }))}
-                        portal
-                        buttonClassName="billing-discount-type"
-                        options={[{ value: 'percent', label: '%' }, { value: 'amount', label: '₹' }]}
-                      />
-                    </div>
-                  </div>
-                  {config.showGst && (
-                    <>
-                      <div className="billing-bulk-field billing-tax-field">
-                        <label htmlFor="bulk-gst-rate">Tax</label>
-                        <input
-                          id="bulk-gst-rate"
-                          className="billing-bulk-input"
-                          type="number"
-                          min="0"
-                          value={bulkGstRate}
-                          onChange={(e) => setBulkGstRate(e.target.value)}
-                          placeholder="%"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        className="billing-apply-all-btn"
-                        onClick={applyQuickValuesToAllItems}
-                      >
-                        Apply to all items
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="sales-product-entry-grid grid grid-cols-[minmax(190px,1fr)_minmax(170px,.9fr)_86px_150px_64px_82px_82px_150px_74px_52px] items-end gap-3">
-                <div className="flex flex-col gap-2">
-                  <label className="text-[12px] font-semibold uppercase text-[#0f172a]">{quickProductLabel} <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700">F6</span></label>
-                  <div className="relative">
-                    <AutocompleteInput
-                      data-fkey="product"
-                      dropDirection="down"
-                      placeholder={quickProductPlaceholder}
-                      value={productSearch}
-                      onChange={updateProductSearch}
-                      onSelect={(v) => applyQuickProductSelection(v)}
-                      onKeyDown={async (e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          await handleQuickProductEntry(e.currentTarget.value);
-                        }
-                      }}
-                      options={productSearchOptions(salesItemFilter)}
-                      inputClassName="!h-10 !rounded-md !border-[#dbe4ef] !bg-white !pr-3 !text-[13px] !font-[inherit] focus:!border-blue-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[12px] font-semibold uppercase text-[#0f172a]">Description</label>
-                  <input
-                    className="h-10 w-full rounded-md border border-[#dbe4ef] bg-white px-3 text-[13px] outline-none focus:border-blue-500"
-                    data-fkey="quick-itemDescription"
-                    placeholder="Item description"
-                    value={quickItem.itemDescription || ''}
-                    onChange={(e) => updateQuickItem('itemDescription', e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        focusQuickItemField('hsn');
-                      }
-                    }}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[12px] font-semibold uppercase text-[#0f172a]">HSN / SAC</label>
-                  <HsnCodeInput className="w-full" inputClassName="!h-10 !rounded-md !border-[#dbe4ef] !bg-white !px-3 !text-[13px] focus:!border-blue-500" data-fkey="quick-hsn" placeholder={quickItem.itemType === 'Service' ? 'SAC' : 'HSN'} value={quickItem.hsn} onChange={(v) => updateQuickItem('hsn', v)} onKeyDown={(e) => handleQuickItemStep(e, quickProductVariants.length ? 'model' : 'qty')} />
-                </div>
-
-                {quickProductVariants.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    <label className="text-[12px] font-semibold uppercase text-[#0f172a]">{quickVariantLabel}</label>
-                    <SelectDropdown onFieldFocus={clearQuickModelOnEnter} onFieldBlur={validateQuickModelOnLeave} data-fkey="quick-model" value={quickItem.size || ''} onChange={(v) => { selectQuickItemVariant(quickMatchedProduct, v); focusQuickItemField('qty'); }} placeholder={quickVariantPlaceholder} buttonClassName="!h-10 !rounded-md !border-[#dbe4ef] !bg-white !px-3 !text-[13px]" selectedLabelClassName="text-left whitespace-nowrap overflow-hidden text-ellipsis" optionLabelClassName="w-full min-w-0" dropDirection="down" portal closeOnScroll searchable allowCustom customLabel="Manual size" searchPlaceholder="Type the variant and search here" options={quickProductVariants.map((variant) => variantDropdownOption(variant, quickMatchedProduct))} />
-                  </div>
-                )}
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[12px] font-semibold uppercase text-[#0f172a]">Qty</label>
-                  <AutocompleteInput className="w-full" inputClassName="!h-10 !rounded-md !border-[#dbe4ef] !bg-white !px-3 !text-[13px] focus:!border-blue-500" data-fkey="quick-qty" min="0" type="number" value={String(quickItem.qty ?? '')} onChange={(v) => updateQuickItem('qty', v)} onKeyDown={(e) => handleQuickItemStep(e, 'unit')} />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[12px] font-semibold uppercase text-[#0f172a]">Unit</label>
-                  <AutocompleteInput className="w-full" inputClassName="!h-10 !rounded-md !border-[#dbe4ef] !bg-white !px-3 !text-[13px] focus:!border-blue-500" data-fkey="quick-unit" value={quickItem.unit} onChange={(v) => updateQuickItem('unit', v)} onKeyDown={(e) => handleQuickItemStep(e, 'rate')} />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[12px] font-semibold uppercase text-[#0f172a]">Rate</label>
-                  <AutocompleteInput className="w-full" inputClassName="!h-10 !rounded-md !border-[#dbe4ef] !bg-white !px-3 !text-[13px] focus:!border-blue-500" data-fkey="quick-rate" min="0" type="number" value={String(quickItem.rate ?? '')} onChange={(v) => updateQuickItem('rate', v)} onKeyDown={(e) => handleQuickItemStep(e, 'discount')} />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[12px] font-semibold uppercase text-[#0f172a]">Discount %</label>
-                  <AutocompleteInput className="w-full" inputClassName="!h-10 !rounded-md !border-[#dbe4ef] !bg-white !px-3 !text-[13px] focus:!border-blue-500" data-fkey="quick-discount" min="0" max="100" type="number" value={String(quickItem.discount ?? '')} onChange={(v) => updateQuickItem('discount', v)} onKeyDown={(e) => handleQuickItemStep(e, config.showGst ? 'gstRate' : 'add')} />
-                </div>
-
-                {config.showGst && (
-                  <div className="flex flex-col gap-2">
-                    <label className="text-[12px] font-semibold uppercase text-[#0f172a]">Tax (%)</label>
-                    <AutocompleteInput className="w-full" inputClassName="!h-10 !rounded-md !border-[#dbe4ef] !bg-white !px-3 !text-[13px] focus:!border-blue-500" data-fkey="quick-gstRate" min="0" type="number" value={String(quickItem.gstRate ?? '')} onChange={(v) => updateQuickItem('gstRate', v)} onKeyDown={(e) => handleQuickItemStep(e, 'add')} />
-                  </div>
-                )}
-
-                <button data-fkey="quick-add" type="button" className="flex h-10 items-center justify-center rounded-md bg-blue-600 text-white shadow-sm" onClick={() => addQuickItem()} title="Add item">
-                  <ArrowLeft size={16} className="rotate-180" />
-                </button>
-              </div>
-
-              <div className="mt-3 min-h-[300px] rounded-lg border border-dashed border-[#dbe4ef] bg-[#fafbfe]">
-                {effectiveItems.length > 0 && (
-                  <div className="divide-y divide-[#edf2f7] bg-white">
-                    {effectiveItems.map((item, idx) => {
-                      const line = calcLine(item);
-                      return (
-                        <div key={item.id || idx} className="grid grid-cols-[36px_minmax(0,1fr)_80px_90px_110px_40px] items-center gap-3 px-4 py-3 text-[13px]">
-                          <span className="text-[#94a3b8]">#{idx + 1}</span>
-                          <span className="min-w-0">
-                            <strong className="block truncate text-[#111827]">{item.description || 'Unnamed item'}</strong>
-                            <small className="text-[#64748b]">{item.productCode || item.barcode || item.hsn || '-'}</small>
-                          </span>
-                          <span className="text-right">{Number(item.qty || 0)} {item.unit || ''}</span>
-                          <span className="text-right">{formatCurrency(Number(item.rate || 0))}</span>
-                          <strong className="text-right">{formatCurrency(line.total)}</strong>
-                          <button type="button" className="h-8 w-8 rounded-md border border-[#fee2e2] bg-white text-red-500" onClick={() => removeItem(item.id)}><X size={15} /></button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-            </section>
-
-            <aside className="flex flex-col gap-4">
-              <DocumentSummaryCard title="Bill Summary" className="sales-reference-card">
-                <div className="billing-summary-lines">
-                  <div className="flex items-center justify-between"><span>Subtotal</span><strong>{formatCurrency(totals.subtotal)}</strong></div>
-                  <div className="flex items-center justify-between"><span>Discount</span><strong>{formatCurrency(totals.discount + totals.addDiscAmt)}</strong></div>
-                  <div className="flex items-center justify-between"><span>Taxable Amount</span><strong>{formatCurrency(posTaxableAmount)}</strong></div>
-                  <div className="flex items-center justify-between"><span>CGST (9%)</span><strong>{formatCurrency(posHalfGst)}</strong></div>
-                  <div className="flex items-center justify-between"><span>SGST (9%)</span><strong>{formatCurrency(posHalfGst)}</strong></div>
-                </div>
-                <div className="document-summary-total">
-                  <span className="text-[14px] font-semibold uppercase">Total</span>
-                  <strong className="text-[28px] leading-none">{formatCurrency(totals.finalTotal)}</strong>
-                </div>
-                {['invoice', 'bill-of-supply', 'pharmacy-bill'].includes(effectiveDocumentType) && (
-                  <div className="mt-5 space-y-3 rounded-lg border border-amber-100 bg-amber-50 p-3 text-[13px] font-semibold text-amber-900">
-                    <div className="flex items-center justify-between">
-                      <span>Old Credit Balance</span>
-                      <strong>{formatCurrency(oldCreditBalance)}</strong>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>This Invoice Balance</span>
-                      <strong>{formatCurrency(currentInvoiceBalance)}</strong>
-                    </div>
-                    <div className="flex items-center justify-between border-t border-amber-200 pt-2 text-[14px]">
-                      <span>Total Balance</span>
-                      <strong>{formatCurrency(customerBalanceAfterInvoice)}</strong>
-                    </div>
-                  </div>
-                )}
-              </DocumentSummaryCard>
-
-              {isEditingPostedInvoice ? <section className="sales-reference-card bg-white p-6 shadow-sm"><h3 className="m-0 mb-3 text-sm font-semibold">Existing payments will be kept</h3><p className="text-sm text-slate-600">Saving updates this bill, its stock and accounting. Use Record Payment from the Bills list for additional payments.</p><button type="button" disabled={saveLoading} onClick={() => handleSave()} className="app-save-button mt-4 rounded-md bg-blue-600 px-5 py-3 font-semibold text-white disabled:opacity-50">{saveLoading ? 'Saving...' : 'Save'}</button></section> : <div className="sales-reference-card bg-white p-6 shadow-sm">
-                <h3 className="m-0 mb-4 text-[13px] font-semibold uppercase text-[#0f172a]">Payment Method</h3>
-                <div className="grid grid-cols-3 gap-3">
-                  {PAYMENT_METHODS.filter((m) => ['cash', 'upi', 'card'].includes(m.id)).map((m) => (
-                    <button key={m.id} type="button" onClick={() => selectPaymentMethod(m.id)} className={`inline-flex min-h-[52px] items-center justify-center gap-2 rounded-md border text-[13px] font-semibold ${selectedPayment === m.id ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-[#dbe4ef] bg-white text-[#0f2757]'}`}>
-                      <FileText size={17} className={m.id === 'cash' ? 'text-green-600' : 'text-blue-600'} />
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-                {selectedPayment && (
-                  <button type="button" onClick={() => setShowPaymentMethodPopup(true)} className="mt-4 inline-flex min-h-[42px] w-full items-center justify-between rounded-md border border-blue-100 bg-blue-50 px-3 text-[12px] font-semibold text-blue-700">
-                    <span>{PAYMENT_METHODS.find((method) => method.id === selectedPayment)?.label || 'Payment'} details</span>
-                    <strong>{selectedPayment === 'credit' ? `${paymentData.creditDays || 0} days` : formatCurrency(Number(paymentData.amount) || 0)}</strong>
-                  </button>
-                )}
-                <button type="button" onClick={openMultiplePayment} className="mt-4 inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-md border border-[#dbe4ef] bg-white text-[13px] font-semibold text-[#0f2757] hover:border-blue-300 hover:text-blue-700">
-                  <FileText size={17} className="text-blue-600" />
-                  Multiple Payment
-                </button>
-                <button type="button" disabled={saveLoading} onClick={() => handleSave()} className="mt-6 inline-flex h-14 w-full items-center justify-center gap-3 rounded-lg border border-blue-600 bg-blue-600 px-5 text-[16px] font-semibold text-white shadow-sm disabled:opacity-60">
-                  <Send size={19} />
-                  Pay {formatCurrency(totals.finalTotal)}
-                  <span className="ml-auto rounded bg-blue-500 px-2 py-1 text-[11px]">F10</span>
-                </button>
-              </div>}
-            </aside>
-          </div>
-          <div className="sales-reference-notes-grid grid grid-cols-1 gap-4 bg-[#f8fbff] px-4 pb-4 lg:grid-cols-2">
-            <section className="sales-reference-card bg-white p-4 shadow-sm">
-              <h2 className="m-0 mb-3 text-[13px] font-semibold uppercase text-[#0f172a]">Notes</h2>
-              <textarea
-                data-fkey="notes"
-                className="min-h-[92px] w-full resize-y rounded-md border border-[#dbe4ef] bg-white px-3 py-2.5 text-[13px] text-[#111827] outline-none focus:border-blue-500"
-                placeholder={`Notes visible to ${partyKindLower} on this document...`}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </section>
-
-            <section className="sales-reference-card bg-white p-4 shadow-sm">
-              <h2 className="m-0 mb-3 text-[13px] font-semibold uppercase text-[#0f172a]">Terms & Conditions</h2>
-              <textarea
-                className="min-h-[92px] w-full resize-y rounded-md border border-[#dbe4ef] bg-white px-3 py-2.5 text-[13px] text-[#111827] outline-none focus:border-blue-500"
-                placeholder="Payment terms, delivery conditions..."
-                value={terms}
-                onChange={(e) => setTerms(e.target.value)}
-              />
-            </section>
-          </div>
-        </section>
-        <MobileBarcodeScanner
-          open={showBarcodeScanner}
-          onClose={() => setShowBarcodeScanner(false)}
-          onDetected={handleCameraBarcodeDetected}
-          status={barcodeScanStatus}
-          unknownCode={unknownBarcode}
-          scannedItems={displayItems}
-          total={totals.finalTotal}
-          onAddUnknown={() => {
-            if (!unknownBarcode) return;
-            setShowBarcodeScanner(false);
-            openAddProductForBarcode(unknownBarcode);
-          }}
-        />
-
-        {paymentMethodPopup}
-
-        {showPaymentPopup && (
-          <div className="billing-payment-popup-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowPaymentPopup(false); }}>
-            <div className="billing-payment-popup" role="dialog" aria-modal="true" aria-label="Multiple payment">
-              <div className="billing-payment-popup-header">
-                <div><strong>Split Payment</strong><span>Total {formatCurrency(totals.finalTotal)}</span></div>
-                <button type="button" onClick={() => setShowPaymentPopup(false)} aria-label="Close payment popup"><X size={16} /></button>
-              </div>
-              <div className="billing-payment-popup-rows">
-                {PAYMENT_METHODS.filter((method) => method.id !== 'credit').map((method) => {
-                  const split = paymentSplits.find((row) => row.id === method.id) || {};
-                  return (
-                    <div key={method.id} className="billing-payment-popup-row">
-                      <label>{method.label}</label>
-                      <input type="number" min="0" placeholder="0" value={split.amount || ''} onChange={(e) => updatePaymentSplit(method.id, 'amount', e.target.value)} />
-                      <button type="button" onClick={() => fillPaymentSplit(method.id)}>Full</button>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="billing-payment-popup-footer">
-                <div><span>Received</span><strong>{formatCurrency(paymentSplitTotal)}</strong></div>
-                <div><span>Balance / Credit</span><strong>{formatCurrency(customerBalanceAfterInvoice)}</strong></div>
-                <button type="button" onClick={() => setShowPaymentPopup(false)}>Done</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showPreview && (
-          <DocumentPreviewModal
-            config={config}
-            customer={getEffectiveCustomer()}
-            docMeta={docMeta}
-            docExtra={docExtra}
-            items={isAutomobileNote ? creditPrintDocument({ items: displayItems }).items : displayItems}
-            charges={charges}
-            totals={totals}
-            notes={notes}
-            terms={terms}
-            supplyType={supplyType}
-            bizSettings={previewBizSettings}
-            shipping={shipping}
-            sameShipping={sameShipping}
-            tds={tds}
-            tcs={tcs}
-            advanceAmt={advanceAmt}
-            paymentMethod={currentPaymentMethodLabel()}
-            paymentSplits={paymentSplits}
-            addDiscount={addDiscount}
-            autoPrint={autoPrintPreview}
-            downloadAsPdf={downloadPdfMode}
-            pdfMode={downloadPdfMode}
-            invoiceNumber={docMeta.number}
-            onClose={() => {
-              setShowPreview(false);
-              setAutoPrintPreview(false);
-              setDownloadPdfMode(false);
-              if (previewRedirectOnClose) {
-                window.location.assign(LIST_ROUTES[documentType] ?? '/billing/invoice');
-              }
-            }}
-          />
-        )}
       </div>
     );
   }
@@ -5651,7 +5208,7 @@ const [customFields, setCustomFields]         = useState([]);
               )}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-7 gap-y-1 text-[11px] font-semibold text-[#64748b]">
-              <span>Phone: <b className="font-semibold text-[#94a3b8]">{getEffectiveCustomer().phone || '-'}</b></span>
+              <span>{supportsB2CInvoice ? 'Mobile *' : 'Phone'}: <button type="button" className="border-0 bg-transparent p-0 font-semibold text-blue-600 cursor-pointer" onClick={openCustomerEditor}>{getEffectiveCustomer().phone || (supportsB2CInvoice ? 'Add mobile number' : '-')}</button></span>
               <span>Email: <b className="font-semibold text-[#94a3b8]">{getEffectiveCustomer().email || '-'}</b></span>
               <span>GSTIN: <b className="font-semibold text-[#94a3b8]">{getEffectiveCustomer().gstin || '-'}</b></span>
               <span>State: <b className="font-semibold text-[#475569]">{getEffectiveCustomer().state || BUSINESS_STATE}</b></span>
@@ -6000,7 +5557,7 @@ const [customFields, setCustomFields]         = useState([]);
                       await handleQuickProductEntry(e.currentTarget.value);
                     }
                   }}
-                  options={productSearchOptions(salesItemFilter)}
+                  options={productSearchOptions(effectiveSalesItemFilter)}
                 />
                 <button
                   type="button"
@@ -7095,6 +6652,13 @@ const [customFields, setCustomFields]         = useState([]);
 
   // ── JSX ──────────────────────────────────────────────────────────────────────
 
+  const b2cSaveActions = <div className="fbc-save-actions">
+    <button type="button" className="app-save-button billing-generate-btn" title="Save (F2)" disabled={saveLoading} onClick={() => handleSave({})}>
+      {saveLoading ? 'Saving...' : 'Save'}<kbd>F2</kbd>
+    </button>
+    <button type="button" className="fbc-header-print" aria-label="Print Bill" aria-keyshortcuts="Space" title="Save and print 80mm bill (Space)" disabled={saveLoading || showPreview} onClick={handlePrintBill}><Printer size={17} />{saveLoading ? 'Saving...' : showPreview && autoPrintPreview ? 'Printing...' : 'Print Bill'}<kbd>Space</kbd></button>
+  </div>;
+
   const invoiceSummary = !isPurchaseDocument ? (<DocumentSummaryCard as="aside" title="Invoice Summary" className="billing-summary-card">
         <div className="billing-summary-lines">
           {isRetailPosInvoice && <div><span>Items</span><strong>{effectiveItems.length}</strong></div>}
@@ -7162,7 +6726,7 @@ const [customFields, setCustomFields]         = useState([]);
               <strong>{formatCurrency(isEditingPostedInvoice ? currentInvoiceBalance : Math.max(0, (Number(totals.finalTotal) || 0) - (Number(paymentData.amount || (selectedPayment === 'credit' ? 0 : totals.finalTotal)) || 0)))}</strong>
             </div>
             <div className="billing-summary-subtitle">{isRetailPosInvoice ? 'Payment' : 'Payment Method'}</div>
-            <div className="billing-payment-grid">
+            <div className={`billing-payment-grid${supportsB2CInvoice ? ' billing-payment-grid-with-multiple' : ''}`}>
               {PAYMENT_METHODS.map((m) => {
                 const active = (isB2CInvoice ? fashionCheckoutMethod : selectedPayment) === m.id;
                 return (
@@ -7180,6 +6744,12 @@ const [customFields, setCustomFields]         = useState([]);
                   </button>
                 );
               })}
+              {supportsB2CInvoice && (
+                <button type="button" aria-label="Multiple Payment" aria-pressed={paymentSplits.length > 0} className={paymentSplits.length > 0 ? 'active' : ''} onClick={openMultiplePayment}>
+                  <span><ArrowRightLeft size={14} /></span>
+                  Multiple Payment
+                </button>
+              )}
             </div>
 
             {selectedPayment && (
@@ -7189,28 +6759,18 @@ const [customFields, setCustomFields]         = useState([]);
               </button>
             )}
 
-            <button type="button" className="billing-payment-summary-chip" onClick={openMultiplePayment}>
+            {!supportsB2CInvoice && <button type="button" className="billing-payment-summary-chip" onClick={openMultiplePayment}>
               <span>Multiple Payment</span>
               <strong>{isPurchaseDocument ? 'Paid' : 'Received'} {formatCurrency(isEditingPostedInvoice ? receivedNow : paymentSplitTotal)}</strong>
-            </button>
+            </button>}
             </fieldset>
             {isEditingPostedInvoice && <p className="mt-2 text-[11px] text-[#536173]">Recorded payments are preserved. Manage receipts from the Bills list.</p>}
           </div>
         )}
 
+        {supportsB2CInvoice && documentQuickActions}
         {isB2CInvoice && (saveError || errors.payment) && <p className="fbc-error" role="alert">{saveError || errors.payment}</p>}
-        <div className={isB2CInvoice ? 'fbc-save-actions' : 'contents'}>
-          <button
-            type="button"
-            className="app-save-button billing-generate-btn"
-            disabled={saveLoading}
-            onClick={() => handleSave(isB2CInvoice ? {} : { openPreview: true })}
-          >
-
-            {saveLoading ? 'Saving...' : 'Save'}
-          </button>
-          {isB2CInvoice && <button type="button" className="fbc-print-bill" aria-label="Print Bill" title="Save and print 80mm bill (Space)" disabled={saveLoading || showPreview || !effectiveItems.some((item) => item.description)} onClick={handlePrintBill}><Printer size={17} />{saveLoading ? 'Saving...' : showPreview && autoPrintPreview ? 'Printing...' : 'Print Bill'}<kbd>Space</kbd></button>}
-        </div>
+        {!isB2CInvoice && <button type="button" className="app-save-button billing-generate-btn" disabled={saveLoading} onClick={() => handleSave({ openPreview: true })}>{saveLoading ? 'Saving...' : 'Save'}</button>}
 
 
 
@@ -7338,13 +6898,13 @@ const [customFields, setCustomFields]         = useState([]);
         </header>
       )}
       {/* ── Page Header ── */}
-      {supportsB2CInvoice && <div className="fashion-billing-mode"><div><span>Billing</span><ChevronDown size={14} className="-rotate-90" /><strong>{invoiceId ? 'Edit Invoice' : 'New Invoice'}</strong></div><div className="fashion-billing-switch" role="group" aria-label="Billing mode">{['b2b', 'b2c'].map((mode) => <button type="button" key={mode} aria-pressed={(isB2CInvoice ? 'b2c' : 'b2b') === mode} onClick={() => { updateExtra('billingMode', mode); if (mode === 'b2c' && !selectedPayment) setSelectedPayment('cash'); }}>{mode.toUpperCase()}</button>)}</div></div>}
-      {isB2CInvoice && <FashionB2CInvoice summary={invoiceSummary} onPrint={handlePrintBill} customer={customer} customerOptions={customers.map((entry) => ({ value: String(entry._id || entry.id || entry.name), label: `${entry.name}${entry.phone ? ` · ${entry.phone}` : ''}`, searchText: `${entry.name} ${entry.phone || ''}` }))}
-        onCustomerChange={(value) => { updateCustomer('name', value); updateNewCustomer('name', value); }}
+      {supportsB2CInvoice && <div className="fashion-billing-mode"><div><span>Billing</span><ChevronDown size={14} className="-rotate-90" /><strong>{invoiceId ? 'Edit Invoice' : 'New Invoice'}</strong></div><div className="fashion-billing-switch" role="group" aria-label="Billing mode">{['b2b', 'b2c'].map((mode) => <button type="button" key={mode} aria-pressed={(isB2CInvoice ? 'b2c' : 'b2b') === mode} disabled={saveLoading || invoiceLoading} onClick={() => switchBillingMode(mode)}>{mode.toUpperCase()}</button>)}</div></div>}
+      {isB2CInvoice && <FashionB2CInvoice customerSearch={customerQuery || customer.name || ''} customerLookupLoading={customerLookupLoading} onCustomerSubmit={submitB2CCustomer} headerActions={b2cSaveActions} summary={invoiceSummary} onPrint={handlePrintBill} customer={customer} customerOptions={customers.map((entry) => ({ value: String(entry._id || entry.id || entry.name), label: `${entry.name}${entry.phone ? ` · ${entry.phone}` : ''}`, searchText: `${entry.name} ${entry.phone || ''}` }))}
+        onCustomerChange={updateB2CCustomerSearch}
         onCustomerSelect={(value) => { const selected = customers.find((entry) => String(entry._id || entry.id || entry.name) === value); if (selected) { selectCustomer(selected); setNewCustomerForm(emptyCustomer()); } }}
-        onAddCustomer={() => { setNewCustomerForm(emptyCustomer(customer.name || '')); setCustomerSaveError(''); setShowCustomerDrop(false); setShowAddCustomer(true); }}
-        search={productSearch} onSearchChange={updateProductSearch} onSearchSelect={applyQuickProductSelection} searchOptions={productSearchOptions('Product')}
-        onAddItem={addQuickItem} onCancelItem={cancelQuickItem} variants={quickProductVariants} variantOptions={quickProductVariants.map((variant) => variantDropdownOption(variant, quickMatchedProduct))} model={quickItem.size || ''} onModelChange={(value) => selectQuickItemVariant(quickMatchedProduct, value)} onModelFocus={clearQuickModelOnEnter} onModelBlur={validateQuickModelOnLeave}
+        onAddCustomer={() => openB2CCustomerForm()}
+        search={productSearch} onSearchChange={updateProductSearch} onSearchSelect={applyQuickProductSelection} searchOptions={productSearchOptions(effectiveSalesItemFilter)}
+        quantity={quickItem.qty ?? ''} onQuantityChange={(value) => updateQuickItem('qty', value)} onAddItem={addQuickItem} onCancelItem={cancelQuickItem} variants={quickProductVariants} variantOptions={quickProductVariants.map((variant) => variantDropdownOption(variant, quickMatchedProduct))} model={quickItem.size || ''} onModelChange={(value) => selectQuickItemVariant(quickMatchedProduct, value)} onModelFocus={clearQuickModelOnEnter} onModelBlur={validateQuickModelOnLeave}
         items={effectiveItems.filter((item) => item.description)} onItemChange={updateItem} onVariantChange={selectItemVariant} onRemoveItem={removeItem}
         lineAmount={(item) => calcLine(item).taxable} productForItem={(item) => findCatalogProductForItem(products, item)} totals={totals} meta={docMeta} onMetaChange={updateMeta}
         gstEnabled={config.showGst} onGstChange={(enabled) => setBillType(enabled ? 'with-gst' : 'without-gst')} canToggleGst={documentType === 'invoice'}
@@ -7413,7 +6973,7 @@ const [customFields, setCustomFields]         = useState([]);
             <Eye size={17} />
             <span className="billing-shortcut-key hidden md:inline-flex items-center rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">F3</span>
           </button>
-          {documentQuickActions}
+          {!supportsB2CInvoice && documentQuickActions}
           <div className={purchasePdfImport ? 'billing-header-save-actions' : 'contents'}>
           {purchasePdfImport}
           <button
@@ -7688,6 +7248,7 @@ const [customFields, setCustomFields]         = useState([]);
             <div className="text-[13px] font-semibold text-red-700">Please fix the following before saving:</div>
             <ul className="m-0 pl-0 list-none flex flex-col gap-0.5">
               {errors.customerName     && <li className="text-[12px] text-red-600">• {errors.customerName}</li>}
+              {errors.customerPhone    && <li className="text-[12px] text-red-600">• {errors.customerPhone}</li>}
               {errors.invoiceNumber   && <li className="text-[12px] text-red-600">• {errors.invoiceNumber}</li>}
               {errors.invoiceDate     && <li className="text-[12px] text-red-600">• {errors.invoiceDate}</li>}
               {errors.items           && <li className="text-[12px] text-red-600">• {errors.items}</li>}
@@ -7726,7 +7287,7 @@ const [customFields, setCustomFields]         = useState([]);
                   addQuickItem(e.currentTarget.value);
                 }
               }}
-              options={productSearchOptions(salesItemFilter)}
+              options={productSearchOptions(effectiveSalesItemFilter)}
             />
             <button type="button" onClick={() => addQuickItem()} title="Add product (F3)"><span className="hidden md:inline">F3</span><span className="md:hidden">+</span></button>
           </div>
@@ -7945,7 +7506,7 @@ const [customFields, setCustomFields]         = useState([]);
 
         <div className="billing-mobile-save-proceed-row md:hidden flex items-center gap-2 px-6 py-4 border-b border-[#edf2f7]">
           {canUseSalesLifecycle && (!invoiceId || invoiceLifecycle === 'draft') ? <button type="button" className={`app-save-button ${cx.btnOutline}`} disabled={saveLoading} onClick={() => handleSave({ saveAsDraft: true })}>Save</button> : null}
-          {documentQuickActions}
+          {!supportsB2CInvoice && documentQuickActions}
           <button type="button" className={`app-save-button flex-1 justify-center ${cx.btnPrimary}`} disabled={saveLoading} onClick={() => handleSave()} title={`${config.buttonText} (F2)`}>
             {saveLoading ? 'Saving…' : config.buttonText}
           </button>
@@ -7980,7 +7541,7 @@ const [customFields, setCustomFields]         = useState([]);
                     addQuickItem(e.currentTarget.value);
                   }
                 }}
-                options={productSearchOptions(salesItemFilter)}
+                options={productSearchOptions(effectiveSalesItemFilter)}
               />
             </div>
             <label><span>Qty</span><AutocompleteInput type="number" min="0" value={String(quickItem.qty ?? '')} onChange={(v) => updateQuickItem('qty', v)} /></label>
@@ -8192,11 +7753,11 @@ const [customFields, setCustomFields]         = useState([]);
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className={cx.field}>
               <label className={cx.label}>{config.partyNameLabel}</label>
-              <input ref={customerNameInputRef} data-fkey="party-add" className={errors.customerName ? cx.inputError : cx.input} placeholder={`${partyKind} name`} value={newCustomerForm.name} onChange={(e) => updateNewCustomer('name', e.target.value)} />
+              <input aria-label="Customer name" ref={customerNameInputRef} data-fkey="party-add" className={errors.customerName ? cx.inputError : cx.input} placeholder={`${partyKind} name`} value={newCustomerForm.name} onChange={(e) => updateNewCustomer('name', e.target.value)} />
             </div>
             <div className={cx.field}>
-              <label className={cx.label}>Phone</label>
-              <input className={cx.input} placeholder="+91 XXXXX XXXXX" value={newCustomerForm.phone} onChange={(e) => updateNewCustomer('phone', e.target.value)} />
+              <label className={cx.label}>{supportsB2CInvoice ? 'Mobile Number *' : 'Phone'}</label>
+              <input aria-label="Customer mobile number" type="tel" inputMode="tel" required={supportsB2CInvoice} aria-required={supportsB2CInvoice} className={cx.input} placeholder="+91 XXXXX XXXXX" value={newCustomerForm.phone} onChange={(e) => updateNewCustomer('phone', e.target.value)} />
             </div>
             <div className={cx.field}>
               <label className={cx.label}>GSTIN</label>

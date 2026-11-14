@@ -361,6 +361,63 @@ test('new product receipts apply quantity exactly once', async () => {
   assert.equal(db.state().product.variants[0].stock, 5);
 });
 
+test('a receipt without variant details updates a single existing variant and its parent together', async () => {
+  const db = store({ stock: 0, variants: [{ _id: variantId, modelName: 'Speaker', barcode: 'SPEAKER-1', stock: 0 }] });
+  await postInventoryForDocument({ ...purchase, items: [{ ...line, qty: 4 }] }, userId);
+  assert.equal(db.state().product.stock, 4);
+  assert.equal(db.state().product.variants[0].stock, 4);
+  assert.equal(db.state().incoming[0].variantId, variantId);
+});
+
+test('standard electronics purchased by barcode sell out without creating duplicate model rows', async () => {
+  const db = store({ missingProduct: true });
+  const item = { ...line, productId: null, description: 'Speaker', productType: 'Standard', barcode: 'SPEAKER-1', qty: 4 };
+  await postInventoryForDocument({ ...purchase, businessSettingsSnapshot: { retailSubcategory: 'electronics-technology' }, items: [item] }, userId);
+  assert.equal(db.state().product.stock, 4);
+  assert.equal(db.state().product.variants.length, 0);
+  await postInventoryForDocument({ ...purchase, _id: '507f1f77bcf86cd799439009', documentType: 'invoice', items: [{ ...item, productId, size: 'Speaker' }] }, userId);
+  assert.equal(db.state().product.stock, 0);
+  assert.equal(db.state().outgoing.length, 1);
+  assert.equal(db.state().product.variants.length, 0);
+});
+
+test('a receipt with multiple variants cannot change only the parent quantity', async () => {
+  const db = store({ stock: 0, variants: [{ _id: variantId, size: 'Red', stock: 0 }, { _id: '507f1f77bcf86cd799439005', size: 'Blue', stock: 0 }] });
+  await assert.rejects(postInventoryForDocument({ ...purchase, items: [{ ...line, qty: 4 }] }, userId), /Select a valid inventory variant/);
+  assert.equal(db.state().product.stock, 0);
+  assert.deepEqual(db.state().product.variants.map(v => v.stock), [0, 0]);
+  assert.equal(db.state().incoming.length, 0);
+});
+
+test('legacy identical barcode rows reuse the stocked variant on sale, edit and reversal', async () => {
+  const stockedId = '507f1f77bcf86cd799439005';
+  const db = store({ stock: 4, variants: [{ _id: variantId, modelName: 'Speaker', barcode: 'SPEAKER-1', stock: 0 }, { _id: stockedId, modelName: 'Speaker', barcode: 'SPEAKER-1', stock: 4 }] });
+  const sale = { ...purchase, documentType: 'invoice', items: [{ ...line, barcode: 'SPEAKER-1', qty: 4 }] };
+  await postInventoryForDocument(sale, userId);
+  assert.equal(db.state().product.stock, 0);
+  assert.deepEqual(db.state().product.variants.map(v => v.stock), [0, 0]);
+  assert.equal(db.state().outgoing[0].variantId, stockedId);
+  await postInventoryForDocument({ ...sale, items: [{ ...sale.items[0], qty: 2 }] }, userId);
+  assert.equal(db.state().product.stock, 2);
+  assert.deepEqual(db.state().product.variants.map(v => v.stock), [0, 2]);
+  assert.equal(db.state().outgoing.length, 1);
+  await reverseInventoryForDocument(sale, userId);
+  assert.equal(db.state().product.stock, 4);
+  assert.deepEqual(db.state().product.variants.map(v => v.stock), [0, 4]);
+});
+
+test('identical legacy models with two stocked rows still require an exact selection', async () => {
+  const otherId = '507f1f77bcf86cd799439005';
+  const db = store({ stock: 4, variants: [{ _id: variantId, modelName: 'Speaker', barcode: 'SPEAKER-1', stock: 2 }, { _id: otherId, modelName: 'Speaker', barcode: 'SPEAKER-1', stock: 2 }] });
+  const sale = { ...purchase, documentType: 'invoice', items: [{ ...line, barcode: 'SPEAKER-1', qty: 2 }] };
+  await assert.rejects(postInventoryForDocument(sale, userId), /Select the exact variant/);
+  assert.equal(db.state().product.stock, 4);
+  assert.equal(db.state().outgoing.length, 0);
+  await postInventoryForDocument({ ...sale, items: [{ ...sale.items[0], variantId: otherId }] }, userId);
+  assert.equal(db.state().product.stock, 2);
+  assert.deepEqual(db.state().product.variants.map(v => v.stock), [2, 0]);
+});
+
 test('Automobile receipt uses Electronics product handling without changing its business subcategory', async () => {
   const db = store({ missingProduct: true });
   const receipt = {

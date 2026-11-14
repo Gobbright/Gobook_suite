@@ -1,6 +1,8 @@
 import { ModuleRecord } from '../../models/ModuleRecord.js';
 import { httpError } from '../../utils/httpError.js';
 import { asNumber, asText, parseExcelRows } from '../../utils/excelImport.js';
+import { inventoryTransaction } from '../../services/inventoryTransaction.js';
+import { hasModuleInventory, moduleInventoryId, sameModuleInventoryRequest, sameModuleInventoryEffect, postModuleInventory, reverseModuleInventory } from '../../services/moduleRecordInventory.js';
 
 // GET /api/module-records?moduleKey=hospital/patients
 export async function listRecords(req, res, next) {
@@ -19,7 +21,27 @@ export async function createRecord(req, res, next) {
   try {
     const { moduleKey, data } = req.body;
     if (!moduleKey) return next(httpError(400, 'moduleKey is required'));
-    const record = await ModuleRecord.create({ userId: req.user.id, moduleKey, data: data || {} });
+    const id = moduleInventoryId(req.user.id, moduleKey, data);
+    const save = async () => {
+      if (id) {
+        const existing = await ModuleRecord.findOne({ _id: id, userId: req.user.id, moduleKey }).lean();
+        if (existing) {
+          if (!sameModuleInventoryRequest(existing.data, data)) throw httpError(409, 'This stock posting reference was already used. Refresh the saved record.');
+          return existing;
+        }
+      }
+      const created = await ModuleRecord.create({ ...(id ? { _id: id } : {}), userId: req.user.id, moduleKey, data: data || {} });
+      await postModuleInventory(created);
+      return created;
+    };
+    let record;
+    try { record = id ? await inventoryTransaction(save) : await save(); }
+    catch (error) {
+      if (error.code !== 11000 || !id) throw error;
+      const existing = await ModuleRecord.findOne({ _id: id, userId: req.user.id, moduleKey }).lean();
+      if (!existing || !sameModuleInventoryRequest(existing.data, data)) throw httpError(409, 'This stock posting reference was already used');
+      record = existing;
+    }
     res.status(201).json(record);
   } catch (err) {
     next(err);
@@ -29,11 +51,28 @@ export async function createRecord(req, res, next) {
 // PUT /api/module-records/:id
 export async function updateRecord(req, res, next) {
   try {
-    const record = await ModuleRecord.findOneAndUpdate(
-      { _id: req.params.id, userId: req.user.id },
-      { $set: { data: req.body.data || {} } },
-      { new: true, runValidators: true },
-    ).lean();
+    const current = await ModuleRecord.findOne({ _id: req.params.id, userId: req.user.id }).lean();
+    if (!current) throw httpError(404, 'Record not found');
+    const save = async () => {
+      const existing = await ModuleRecord.findOne({ _id: req.params.id, userId: req.user.id }).lean();
+      if (!existing) throw httpError(404, 'Record not found');
+      const effectChanged = !sameModuleInventoryEffect(existing, { ...existing, data: req.body.data });
+      if (hasModuleInventory(existing)) {
+        if (!hasModuleInventory({ ...existing, data: req.body.data })) throw httpError(409, 'Keep the stock posting reference when editing this record');
+        if (req.body.data.inventoryPosting.key !== existing.data.inventoryPosting.key) throw httpError(409, 'The stock posting reference cannot be changed');
+        if (effectChanged) await reverseModuleInventory(existing);
+      }
+      const updated = await ModuleRecord.findOneAndUpdate(
+        { _id: req.params.id, userId: req.user.id },
+        { $set: { data: req.body.data || {} } },
+        { new: true, runValidators: true },
+      ).lean();
+      if (updated && effectChanged) await postModuleInventory(updated);
+      return updated;
+    };
+    const managed = hasModuleInventory(current) || hasModuleInventory({ ...current, data: req.body.data });
+    if (!hasModuleInventory(current) && managed) throw httpError(409, 'Older records cannot be reposted automatically. Correct stock using Edit Product.');
+    const record = managed ? await inventoryTransaction(save) : await save();
     if (!record) return next(httpError(404, 'Record not found'));
     res.json(record);
   } catch (err) {
@@ -44,7 +83,15 @@ export async function updateRecord(req, res, next) {
 // DELETE /api/module-records/:id
 export async function deleteRecord(req, res, next) {
   try {
-    const record = await ModuleRecord.findOneAndDelete({ _id: req.params.id, userId: req.user.id }).lean();
+    const current = await ModuleRecord.findOne({ _id: req.params.id, userId: req.user.id }).lean();
+    if (!current) throw httpError(404, 'Record not found');
+    const remove = async () => {
+      const existing = await ModuleRecord.findOne({ _id: req.params.id, userId: req.user.id }).lean();
+      if (!existing) throw httpError(404, 'Record not found');
+      await reverseModuleInventory(existing);
+      return ModuleRecord.findOneAndDelete({ _id: req.params.id, userId: req.user.id }).lean();
+    };
+    const record = hasModuleInventory(current) ? await inventoryTransaction(remove) : await remove();
     if (!record) return next(httpError(404, 'Record not found'));
     res.json({ message: 'Record deleted' });
   } catch (err) {

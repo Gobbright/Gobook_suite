@@ -108,7 +108,7 @@ export function buildSalesMatchStage(query, userId, baseDocumentType, baseMatch 
 
 // Pipeline fragment attaching totalPaid / balance / payStatus, mirroring the
 // in-memory logic previously in paymentController.js::listOutstanding.
-export function paymentStatusStages(userId) {
+export function paymentStatusStages(userId, { includeMethods = false } = {}) {
   const todayStr = new Date().toISOString().slice(0, 10);
   return [
     {
@@ -117,13 +117,14 @@ export function paymentStatusStages(userId) {
         let: { invId: '$_id' },
         pipeline: [
           { $match: { $expr: { $eq: ['$invoiceId', '$$invId'] } } },
-          { $group: { _id: null, totalPaid: { $sum: '$amount' } } },
+          { $group: { _id: null, totalPaid: { $sum: '$amount' }, ...(includeMethods ? { methods: { $addToSet: '$method' } } : {}) } },
         ],
         as: '_paymentAgg',
       },
     },
     {
       $addFields: {
+        ...(includeMethods ? { _reportReceiptMethods: { $ifNull: [{ $arrayElemAt: ['$_paymentAgg.methods', 0] }, []] } } : {}),
         totalPaid: {
           $let: {
             vars: { paymentTotal: { $ifNull: [{ $arrayElemAt: ['$_paymentAgg.totalPaid', 0] }, 0] } },

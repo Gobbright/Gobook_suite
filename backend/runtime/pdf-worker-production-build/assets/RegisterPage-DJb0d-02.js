@@ -1,0 +1,1 @@
+import{t as e}from"./RegisterPage-DRya3nyW.js";export{e as RegisterPage};

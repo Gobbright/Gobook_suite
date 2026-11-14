@@ -60,3 +60,23 @@ test('purchase PDF API validates input, uses server models, and rejects truncate
     await run({ pages: [{ number: 1, text: 'supplier' }] }); assert.equal(failure.statusCode, 502);
   } finally { global.fetch = originalFetch; env.groqApiKey = originalKey; }
 });
+
+test('missing Qty triggers one source-based recheck and unresolved quantities remain explicitly uncertain', async () => {
+  const originalFetch = global.fetch, originalKey = env.groqApiKey;
+  const base = { vendor: { name: 'Supplier' }, items: [{ description: 'Product', qty: null, rate: 100, gstRate: 5, sourcePage: 1, uncertainFields: ['qty'] }], pageCounts: [{ page: 1, count: 1 }] };
+  let calls = 0, output, failure, prompt;
+  const run = async () => { output = undefined; failure = undefined; await analysePurchasePdf({ body: { pages: [{ number: 1, text: 'Description Qty Rate GST\nProduct 6 Nos 100 5%' }] } }, { json: value => { output = value; } }, error => { failure = error; }); };
+  try {
+    env.groqApiKey = 'test-server-key';
+    global.fetch = async (_url, options) => {
+      calls++; prompt = JSON.parse(options.body).messages.at(-1).content[0].text;
+      const data = calls === 3 ? { ...base, items: [{ ...base.items[0], qty: 6, uncertainFields: [] }] } : base;
+      return { ok: true, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(data) } }] }) };
+    };
+    await run(); assert.equal(failure, undefined); assert.equal(calls, 3); assert.equal(output.data.items[0].qty, 6);
+    assert.match(prompt, /original Qty column/); assert.match(prompt, /Do not default to 1/);
+    calls = 0;
+    global.fetch = async () => { calls++; return { ok: true, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(base) } }] }) }; };
+    await run(); assert.equal(calls, 3); assert.equal(output.data.items[0].qty, null); assert.ok(output.data.warnings.some(warning => /Quantity is missing/.test(warning)));
+  } finally { global.fetch = originalFetch; env.groqApiKey = originalKey; }
+});

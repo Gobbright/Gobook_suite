@@ -1,9 +1,11 @@
-import { DoctorsPage } from './DoctorsPage.jsx';
-import { DepartmentsPage } from './DepartmentsPage.jsx';
-import { ConsultationPage } from './ConsultationPage.jsx';
-import { TreatmentPage } from './TreatmentPage.jsx';
-import { PrescriptionPage } from './PrescriptionPage.jsx';
-import { NursingPage } from './NursingPage.jsx';
+import { lazyPage } from '../../../../../routes/lazyPage.jsx';
+
+const DoctorsPage = lazyPage(() => import('./DoctorsPage.jsx'), 'DoctorsPage');
+const DepartmentsPage = lazyPage(() => import('./DepartmentsPage.jsx'), 'DepartmentsPage');
+const ConsultationPage = lazyPage(() => import('./ConsultationPage.jsx'), 'ConsultationPage');
+const TreatmentPage = lazyPage(() => import('./TreatmentPage.jsx'), 'TreatmentPage');
+const PrescriptionPage = lazyPage(() => import('./PrescriptionPage.jsx'), 'PrescriptionPage');
+const NursingPage = lazyPage(() => import('./NursingPage.jsx'), 'NursingPage');
 
 export const clinicalRoutes = [
   { path: '/hospital/doctors', element: <DoctorsPage /> },

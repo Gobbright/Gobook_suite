@@ -1,73 +1,17 @@
-import { AutomobilePayrollPage } from '../features/categories/automobile/AutomobilePayrollPage.jsx';
-import { AutomobileLeavePage } from '../features/categories/automobile/AutomobileLeavePage.jsx';
-import { AutomobileAttendancePage } from '../features/categories/automobile/AutomobileAttendancePage.jsx';
-import { AutomobileEmployeesPage } from '../features/categories/automobile/AutomobileEmployeesPage.jsx';
+import { AdminProtectedRoute, GlobalErrorReporter, LegacyHashRedirect, LegacyOnboardingRedirect, ProtectedRoute, ProtectedShell, PublicRoute } from './RouteGuards.jsx';
+import { lazyPage } from './lazyPage.jsx';
+
 import { useAutomobileListingLayout } from '../hooks/useAutomobileListingLayout.js';
 import { useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { AutomobileStockAdjustmentPage } from '../features/categories/automobile/AutomobileStockAdjustmentPage.jsx';
+
 import '../features/employee-management/employeeManagement.css';
 
-import { AdminPanelPage } from '../features/admin/AdminPanelPage.jsx';
-import { MainAdminLoginPage } from '../features/admin/MainAdminLoginPage.jsx';
-import { AdminWhatsAppProviderPage } from '../features/admin/pages/AdminWhatsAppProviderPage.jsx';
-import { UsersManagementPage } from '../features/admin/pages/UsersManagementPage.jsx';
-import { InvoicesPage } from '../features/admin/pages/InvoicesPage.jsx';
-import { PaymentsPage } from '../features/admin/pages/PaymentsPage.jsx';
-import { AdminNotificationsPage } from '../features/admin/pages/AdminNotificationsPage.jsx';
-import { AdminStoragePage } from '../features/admin/pages/AdminStoragePage.jsx';
-import { AdminSectionPage } from '../features/admin/pages/AdminSectionPage.jsx';
-import { AdminUserListPage } from '../features/admin/pages/AdminUserListPage.jsx';
-import { AdminUserDetailsPage } from '../features/admin/pages/AdminUserDetailsPage.jsx';
-import { AdminSubscriptionPage } from '../features/admin/pages/AdminSubscriptionPage.jsx';
-import { AdminRecordPage } from '../features/admin/pages/AdminRecordPage.jsx';
-import { CategoryBusinessPage } from '../features/admin/pages/CategoryBusinessPage.jsx';
-import { AdminPaymentControlPage } from '../features/admin/pages/AdminPaymentControlPage.jsx';
-import { PaymentMethodVerificationPage } from '../features/auth/PaymentMethodVerificationPage.jsx';
-import { CategoryHospitalPage } from '../features/admin/pages/CategoryHospitalPage.jsx';
-import { CategoryHotelPage } from '../features/admin/pages/CategoryHotelPage.jsx';
-import { ForgotPasswordPage } from '../features/auth/ForgotPasswordPage.jsx';
-import { LegacyOnboardingRedirect } from './RouteGuards.jsx';
-import { PaymentPage } from '../features/auth/PaymentPage.jsx';
-import { LegalPage } from '../features/auth/LegalPage.jsx';
-import { DataDeletionPage } from '../features/meta/DataDeletionPage.jsx';
-import { LoginPage } from '../features/auth/LoginPage.jsx';
-import { RegisterPage } from '../features/auth/RegisterPage.jsx';
-import { VerifyEmailPage } from '../features/auth/VerifyEmailPage.jsx';
-import { PublicStorePage } from '../features/store/PublicStorePage.jsx';
-import { PlatformAdminPage } from '../features/platform-admin/PlatformAdminPage.jsx';
-import { EmployeeLoginRoute, EmployeePortalRoutes } from '../features/employee-management/EmployeePortalRoutes.jsx';
-import EmployeeAdminDashboard from '../features/employee-management/pages/admin/Dashboard.jsx';
-import { AutomobileEmployeeDashboard } from '../features/categories/automobile/AutomobileEmployeeDashboard.jsx';
-import EmployeeList from '../features/employee-management/pages/admin/employees/EmployeeList.jsx';
-import EmployeeGroupsPage from '../features/employee-management/pages/admin/employees/EmployeeGroupsPage.jsx';
-import AddEmployee from '../features/employee-management/pages/admin/employees/AddEmployee.jsx';
-import EmployeeProfile from '../features/employee-management/pages/admin/employees/EmployeeProfile.jsx';
-import EmployeeDocuments from '../features/employee-management/pages/admin/employees/EmployeeDocuments.jsx';
-import EmployeePermissions from '../features/employee-management/pages/employee/Permissions.jsx';
-import TodayAttendance from '../features/employee-management/pages/admin/attendance/TodayAttendance.jsx';
-import LeaveRequests from '../features/employee-management/pages/admin/leave/LeaveRequests.jsx';
-import Salary from '../features/employee-management/pages/admin/payroll/Salary.jsx';
-import AdminMonthlyAttendance from '../features/employee-management/pages/admin/attendance/MonthlyAttendance.jsx';
-import CorrectionRequests from '../features/employee-management/pages/admin/attendance/CorrectionRequests.jsx';
-import AttendanceReports from '../features/employee-management/pages/admin/attendance/AttendanceReports.jsx';
-import LeaveBalance from '../features/employee-management/pages/admin/leave/LeaveBalance.jsx';
-import LeaveTypes from '../features/employee-management/pages/admin/leave/LeaveTypes.jsx';
-import LeaveCalendar from '../features/employee-management/pages/admin/leave/LeaveCalendar.jsx';
-import LeaveReports from '../features/employee-management/pages/admin/leave/LeaveReports.jsx';
-import AdminPayslips from '../features/employee-management/pages/admin/payroll/Payslips.jsx';
-import PayrollProcessing from '../features/employee-management/pages/admin/payroll/PayrollProcessing.jsx';
-import PayrollDeductions from '../features/employee-management/pages/admin/payroll/Deductions.jsx';
-import PayrollReports from '../features/employee-management/pages/admin/payroll/PayrollReports.jsx';
-import HolidayList from '../features/employee-management/pages/admin/holidays/HolidayList.jsx';
-import AddHoliday from '../features/employee-management/pages/admin/holidays/AddHoliday.jsx';
-import { DashboardPage } from '../pages/DashboardPage.jsx';
-import { AutomobileDashboardPage } from '../features/categories/automobile/AutomobileDashboardPage.jsx';
-import { HotelDashboardPage } from '../features/categories/hotel/modules/dashboard/HotelDashboardPage.jsx';
 import { isAuthenticated, refreshCurrentUser } from '../services/authService.js';
 import { useCurrentUser } from '../hooks/useCurrentUser.js';
 import {
   billingRoutes,
+  b2cBillingRoute,
   eWayBillRoutes,
   GenericBillingRoute,
   InvoiceEditRoute,
@@ -82,8 +26,70 @@ import { hotelRoutes } from './hotelRoutes.jsx';
 import { ngoRoutes } from './ngoRoutes.jsx';
 import { commonRoutes, retailRoutes } from './retailRoutes.jsx';
 import { schoolRoutes } from './schoolRoutes.jsx';
-import { AdminProtectedRoute, GlobalErrorReporter, LegacyHashRedirect, ProtectedRoute, ProtectedShell, PublicRoute } from './RouteGuards.jsx';
+
 import { getLastRoute } from './routeStorage.js';
+
+const AutomobilePayrollPage = lazyPage(() => import('../features/categories/automobile/AutomobilePayrollPage.jsx'), 'AutomobilePayrollPage');
+const AutomobileLeavePage = lazyPage(() => import('../features/categories/automobile/AutomobileLeavePage.jsx'), 'AutomobileLeavePage');
+const AutomobileAttendancePage = lazyPage(() => import('../features/categories/automobile/AutomobileAttendancePage.jsx'), 'AutomobileAttendancePage');
+const AutomobileEmployeesPage = lazyPage(() => import('../features/categories/automobile/AutomobileEmployeesPage.jsx'), 'AutomobileEmployeesPage');
+const AutomobileStockAdjustmentPage = lazyPage(() => import('../features/categories/automobile/AutomobileStockAdjustmentPage.jsx'), 'AutomobileStockAdjustmentPage');
+const AdminPanelPage = lazyPage(() => import('../features/admin/AdminPanelPage.jsx'), 'AdminPanelPage');
+const MainAdminLoginPage = lazyPage(() => import('../features/admin/MainAdminLoginPage.jsx'), 'MainAdminLoginPage');
+const AdminWhatsAppProviderPage = lazyPage(() => import('../features/admin/pages/AdminWhatsAppProviderPage.jsx'), 'AdminWhatsAppProviderPage');
+const UsersManagementPage = lazyPage(() => import('../features/admin/pages/UsersManagementPage.jsx'), 'UsersManagementPage');
+const InvoicesPage = lazyPage(() => import('../features/admin/pages/InvoicesPage.jsx'), 'InvoicesPage');
+const PaymentsPage = lazyPage(() => import('../features/admin/pages/PaymentsPage.jsx'), 'PaymentsPage');
+const AdminNotificationsPage = lazyPage(() => import('../features/admin/pages/AdminNotificationsPage.jsx'), 'AdminNotificationsPage');
+const AdminStoragePage = lazyPage(() => import('../features/admin/pages/AdminStoragePage.jsx'), 'AdminStoragePage');
+const AdminSectionPage = lazyPage(() => import('../features/admin/pages/AdminSectionPage.jsx'), 'AdminSectionPage');
+const AdminUserListPage = lazyPage(() => import('../features/admin/pages/AdminUserListPage.jsx'), 'AdminUserListPage');
+const AdminUserDetailsPage = lazyPage(() => import('../features/admin/pages/AdminUserDetailsPage.jsx'), 'AdminUserDetailsPage');
+const AdminSubscriptionPage = lazyPage(() => import('../features/admin/pages/AdminSubscriptionPage.jsx'), 'AdminSubscriptionPage');
+const AdminRecordPage = lazyPage(() => import('../features/admin/pages/AdminRecordPage.jsx'), 'AdminRecordPage');
+const CategoryBusinessPage = lazyPage(() => import('../features/admin/pages/CategoryBusinessPage.jsx'), 'CategoryBusinessPage');
+const AdminPaymentControlPage = lazyPage(() => import('../features/admin/pages/AdminPaymentControlPage.jsx'), 'AdminPaymentControlPage');
+const PaymentMethodVerificationPage = lazyPage(() => import('../features/auth/PaymentMethodVerificationPage.jsx'), 'PaymentMethodVerificationPage');
+const CategoryHospitalPage = lazyPage(() => import('../features/admin/pages/CategoryHospitalPage.jsx'), 'CategoryHospitalPage');
+const CategoryHotelPage = lazyPage(() => import('../features/admin/pages/CategoryHotelPage.jsx'), 'CategoryHotelPage');
+const ForgotPasswordPage = lazyPage(() => import('../features/auth/ForgotPasswordPage.jsx'), 'ForgotPasswordPage');
+const PaymentPage = lazyPage(() => import('../features/auth/PaymentPage.jsx'), 'PaymentPage');
+const LegalPage = lazyPage(() => import('../features/auth/LegalPage.jsx'), 'LegalPage');
+const DataDeletionPage = lazyPage(() => import('../features/meta/DataDeletionPage.jsx'), 'DataDeletionPage');
+const LoginPage = lazyPage(() => import('../features/auth/LoginPage.jsx'), 'LoginPage');
+const RegisterPage = lazyPage(() => import('../features/auth/RegisterPage.jsx'), 'RegisterPage');
+const VerifyEmailPage = lazyPage(() => import('../features/auth/VerifyEmailPage.jsx'), 'VerifyEmailPage');
+const PublicStorePage = lazyPage(() => import('../features/store/PublicStorePage.jsx'), 'PublicStorePage');
+const PlatformAdminPage = lazyPage(() => import('../features/platform-admin/PlatformAdminPage.jsx'), 'PlatformAdminPage');
+const EmployeeLoginRoute = lazyPage(() => import('../features/employee-management/EmployeePortalRoutes.jsx'), 'EmployeeLoginRoute');
+const EmployeePortalRoutes = lazyPage(() => import('../features/employee-management/EmployeePortalRoutes.jsx'), 'EmployeePortalRoutes');
+const EmployeeAdminDashboard = lazyPage(() => import('../features/employee-management/pages/admin/Dashboard.jsx'));
+const AutomobileEmployeeDashboard = lazyPage(() => import('../features/categories/automobile/AutomobileEmployeeDashboard.jsx'), 'AutomobileEmployeeDashboard');
+const EmployeeList = lazyPage(() => import('../features/employee-management/pages/admin/employees/EmployeeList.jsx'));
+const EmployeeGroupsPage = lazyPage(() => import('../features/employee-management/pages/admin/employees/EmployeeGroupsPage.jsx'));
+const AddEmployee = lazyPage(() => import('../features/employee-management/pages/admin/employees/AddEmployee.jsx'));
+const EmployeeProfile = lazyPage(() => import('../features/employee-management/pages/admin/employees/EmployeeProfile.jsx'));
+const EmployeeDocuments = lazyPage(() => import('../features/employee-management/pages/admin/employees/EmployeeDocuments.jsx'));
+const EmployeePermissions = lazyPage(() => import('../features/employee-management/pages/employee/Permissions.jsx'));
+const TodayAttendance = lazyPage(() => import('../features/employee-management/pages/admin/attendance/TodayAttendance.jsx'));
+const LeaveRequests = lazyPage(() => import('../features/employee-management/pages/admin/leave/LeaveRequests.jsx'));
+const Salary = lazyPage(() => import('../features/employee-management/pages/admin/payroll/Salary.jsx'));
+const AdminMonthlyAttendance = lazyPage(() => import('../features/employee-management/pages/admin/attendance/MonthlyAttendance.jsx'));
+const CorrectionRequests = lazyPage(() => import('../features/employee-management/pages/admin/attendance/CorrectionRequests.jsx'));
+const AttendanceReports = lazyPage(() => import('../features/employee-management/pages/admin/attendance/AttendanceReports.jsx'));
+const LeaveBalance = lazyPage(() => import('../features/employee-management/pages/admin/leave/LeaveBalance.jsx'));
+const LeaveTypes = lazyPage(() => import('../features/employee-management/pages/admin/leave/LeaveTypes.jsx'));
+const LeaveCalendar = lazyPage(() => import('../features/employee-management/pages/admin/leave/LeaveCalendar.jsx'));
+const LeaveReports = lazyPage(() => import('../features/employee-management/pages/admin/leave/LeaveReports.jsx'));
+const AdminPayslips = lazyPage(() => import('../features/employee-management/pages/admin/payroll/Payslips.jsx'));
+const PayrollProcessing = lazyPage(() => import('../features/employee-management/pages/admin/payroll/PayrollProcessing.jsx'));
+const PayrollDeductions = lazyPage(() => import('../features/employee-management/pages/admin/payroll/Deductions.jsx'));
+const PayrollReports = lazyPage(() => import('../features/employee-management/pages/admin/payroll/PayrollReports.jsx'));
+const HolidayList = lazyPage(() => import('../features/employee-management/pages/admin/holidays/HolidayList.jsx'));
+const AddHoliday = lazyPage(() => import('../features/employee-management/pages/admin/holidays/AddHoliday.jsx'));
+const DashboardPage = lazyPage(() => import('../pages/DashboardPage.jsx'), 'DashboardPage');
+const AutomobileDashboardPage = lazyPage(() => import('../features/categories/automobile/AutomobileDashboardPage.jsx'), 'AutomobileDashboardPage');
+const HotelDashboardPage = lazyPage(() => import('../features/categories/hotel/modules/dashboard/HotelDashboardPage.jsx'), 'HotelDashboardPage');
 
 // Rendered inside <BrowserRouter>, so useLocation() re-runs this on clean URL navigation,
 // keeping category-specific route branches fresh without needing a full page reload.
@@ -220,7 +226,8 @@ export function FullAppRoutes() {
         <Route path="/employee-management/holidays" element={employeeManagementPage(<HolidayList />)} />
         <Route path="/employee-management/holidays/add" element={employeeManagementPage(<AddHoliday />)} />
 
-        {hasRetailModules && billingRoutes.map(({ slug, documentType, list, form }) => (
+        <Route path="/billing/b2c" element={b2cBillingRoute} />
+        {billingRoutes.filter(({ documentType }) => hasRetailModules || ['invoice', 'bill-of-supply'].includes(documentType)).map(({ slug, documentType, list, form }) => (
           <Route key={slug} path={`/billing/${slug}`}>
             <Route index element={list} />
             <Route path="new" element={form} />

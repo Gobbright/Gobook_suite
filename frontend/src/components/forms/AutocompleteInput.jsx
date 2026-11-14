@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 // Replaces `<input list="..."> + <datalist>` — same native-popup text-size
@@ -16,16 +16,20 @@ export function AutocompleteInput({ value, onChange, onSelect, options = [], pla
   // Options are plain strings almost everywhere this is used; a caller can
   // optionally pass { value, label, badge } objects instead (e.g. to tag each
   // suggestion as Product/Service) without affecting any other usage.
-  const normalized = options.map((opt) => (typeof opt === 'string' ? { value: opt, label: opt } : opt));
+  const normalized = useMemo(() => options.map((opt) => {
+    const entry = typeof opt === 'string' ? { value: opt, label: opt } : opt;
+    return { entry, normalizedLabel: String(entry.label || '').toLowerCase(), normalizedSearch: String(entry.searchText || entry.label || '').toLowerCase() };
+  }), [options]);
   const query = String(value || '').trim().toLowerCase();
-  const filtered = query && filterOptions
-    ? normalized.filter((opt) => {
-        const label = String(opt.label || '').toLowerCase();
-        const searchText = String(opt.searchText || opt.label || '').toLowerCase();
-        return searchText.includes(query) && label !== query;
-      })
-    : normalized;
-  const suggestions = filtered.slice(0, 20);
+  const suggestions = useMemo(() => {
+    const result = [];
+    for (const option of normalized) {
+      if (query && filterOptions && (!option.normalizedSearch.includes(query) || option.normalizedLabel === query)) continue;
+      result.push(option.entry);
+      if (result.length === 20) break;
+    }
+    return result;
+  }, [normalized, query, filterOptions]);
 
   useEffect(() => {
     if (!open || highlighted < 0) return;
@@ -33,12 +37,13 @@ export function AutocompleteInput({ value, onChange, onSelect, options = [], pla
   }, [open, highlighted]);
 
   useEffect(() => {
+    if (!open) return undefined;
     function handleOutside(e) {
       if (ref.current && !ref.current.contains(e.target) && !dropdownRef.current?.contains(e.target)) setOpen(false);
     }
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
-  }, []);
+  }, [open]);
 
   useEffect(() => {
     if (!portal || !open) return undefined;
@@ -123,6 +128,7 @@ export function AutocompleteInput({ value, onChange, onSelect, options = [], pla
       setOpen(false);
       onKeyDown?.(e);
     } else {
+      if (e.key === 'Enter') setOpen(false);
       onKeyDown?.(e);
     }
   }

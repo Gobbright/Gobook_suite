@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { storeNavigation } from './storeNavigation.js';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -31,6 +32,9 @@ import {
 } from 'lucide-react';
 
 import { sectionStylesCss } from './sectionStyles.js';
+import { LuxuryStorefront } from './LuxuryStorefront.jsx';
+import { StoreCanvas } from './StoreCanvas.jsx';
+import { useStoreDevice } from './useStoreDevice.js';
 import { API_BASE_URL, SERVER_ORIGIN } from '../../services/apiBase.js';
 
 const HERO_BANNER_IMAGE_SRC = 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1250&q=90';
@@ -133,7 +137,7 @@ function storeThemeFor(name) {
 }
 
 function storeTemplateName(name) {
-  return ['boutique', 'marketplace', 'premium'].includes(name) ? name : 'boutique';
+  return ['boutique', 'marketplace', 'premium', 'aurora', 'goldenhue'].includes(name) ? name : 'boutique';
 }
 
 const FALLBACK_PRODUCT_IMAGES = {
@@ -293,14 +297,21 @@ function TemplateProductCard({ product, slug, onAdd, onWishlist, wished, primary
 
 export function PublicStorePage({ preview, onPreviewSelect } = {}) {
   const navigate = useNavigate();
-  const { slug, productId, storePage } = useParams();
+  const routeParams = useParams();
+  const slug = preview ? preview.store.slug : routeParams.slug;
+  const productId = preview ? preview.page === 'details' ? preview.productId || preview.products[0]?.id : undefined : routeParams.productId;
+  const storePage = preview ? preview.page === 'home' || preview.page === 'details' ? undefined : preview.page : routeParams.storePage;
+  const designPage = productId ? 'details' : storePage === 'categories' ? 'products' : storePage || 'home';
   const [loadedStore, setStore] = useState(null);
-  const store = preview?.store || loadedStore;
+  const sourceStore = preview?.store || loadedStore;
+  const responsiveTheme = useStoreDevice(sourceStore?.theme, preview?.device, designPage);
+  const store = sourceStore ? { ...sourceStore, theme: responsiveTheme } : null;
   const [loadedProducts, setProducts] = useState([]);
   const products = preview?.products || loadedProducts;
-  const [productDetail, setProductDetail] = useState(null);
+  const [loadedProductDetail, setProductDetail] = useState(null);
+  const productDetail = preview ? preview.products.find((product) => String(product.id) === String(productId)) : loadedProductDetail;
   const [cart, setCart] = useState(() => {
-    if (preview) return [];
+    if (preview) return preview.page === 'cart' ? preview.products.slice(0, 2).map((product) => ({ ...product, qty: 1 })) : [];
     try {
       return JSON.parse(window.localStorage.getItem(`online-store-cart:${slug}`) || '[]');
     } catch {
@@ -313,14 +324,14 @@ export function PublicStorePage({ preview, onPreviewSelect } = {}) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
-  const [page, setPage] = useState('products');
+  const [page, setPage] = useState(preview?.page === 'cart' ? 'checkout' : 'products');
   const [category, setCategory] = useState('All');
   const [productFilter, setProductFilter] = useState('all');
   const [sortMode, setSortMode] = useState('newest');
   const [viewMode, setViewMode] = useState('grid');
   const [reloadKey, setReloadKey] = useState(0);
   const [wishlist, setWishlist] = useState(() => {
-    if (preview) return [];
+    if (preview) return preview.page === 'wishlist' ? preview.products.slice(0, 3).map((product) => product.id) : [];
     try {
       return JSON.parse(window.localStorage.getItem(`online-store-wishlist:${slug}`) || '[]');
     } catch {
@@ -354,7 +365,7 @@ export function PublicStorePage({ preview, onPreviewSelect } = {}) {
       return;
     }
     setPage('products');
-    const sectionMap = { products: 'products', categories: 'products', offers: 'offers', about: 'about', wishlist: 'wishlist' };
+    const sectionMap = { products: 'products', categories: 'products', offers: 'offers', about: 'about', contact: 'contact', wishlist: 'wishlist' };
     const target = sectionMap[storePage];
     if (target) {
       requestAnimationFrame(() => {
@@ -539,6 +550,10 @@ export function PublicStorePage({ preview, onPreviewSelect } = {}) {
     );
   }
 
+  if (['aurora', 'goldenhue'].includes(templateName)) {
+    return <LuxuryStorefront {...{ store, products, filteredProducts, productDetail, productId, storePage, slug, cart, wishlist, wishlistProducts, itemCount, total, customer, placing, message, error, query, setQuery, category, setCategory, categories, sortMode, setSortMode, productFilter, setProductFilter, addToCart, toggleWishlist, changeQty, removeFromCart, placeOrder, updateCustomer, openStorePath, preview, onPreviewSelect }} />;
+  }
+
   if (['boutique', 'marketplace', 'premium'].includes(templateName)) {
     const isBoutique = templateName === 'boutique';
     const isMarketplace = templateName === 'marketplace';
@@ -559,81 +574,45 @@ export function PublicStorePage({ preview, onPreviewSelect } = {}) {
       : isMarketplace
       ? 'rounded-2xl border-orange-100 bg-white'
       : 'rounded-[36px] border-pink-100 bg-white';
-    const navItems = [
-      ['Home', () => { openStorePath(); setPage('products'); window.scrollTo({ top: 0, behavior: 'smooth' }); }],
-      ['Products', () => scrollToSection('products', '/products')],
-      ['Categories', () => scrollToSection('products', '/categories')],
-      ['Offers', () => scrollToSection('offers', '/offers')],
-      ['About', () => scrollToSection('about', '/about')],
-    ];
-
     const Header = (
       <header data-store-section="header" className={`sticky top-0 z-50 ${isPremium ? 'border-b border-amber-200 bg-slate-950/95' : 'border-b border-slate-200 bg-white/95'} backdrop-blur`}>
-        {store?.theme?.announcement ? <div className="px-4 py-2 text-center text-sm font-semibold text-white" style={{ background: primary }}>{store.theme.announcement}</div> : null}
-        <div className="mx-auto flex max-w-[1780px] items-center gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          {isBoutique ? (
-            <>
-              <button type="button" onClick={() => { openStorePath(); setPage('products'); }} className="shrink-0 border-0 bg-transparent p-0 text-left">
-                <StoreLogo store={store} primary={primary} />
-              </button>
-              <nav className="mx-auto hidden items-center justify-center gap-1 lg:flex">
-                {navItems.map(([label, onClick]) => <button key={label} type="button" onClick={onClick} className="rounded-full px-4 py-2 text-sm font-black text-slate-700 hover:bg-pink-50">{label}</button>)}
-              </nav>
-              <div className="ml-auto flex items-center justify-end gap-3">
-                <label className="relative hidden w-[280px] xl:block">
-                  <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search products" className="h-11 w-full rounded-full border border-pink-100 bg-white pl-11 pr-4 text-sm font-semibold text-slate-900 outline-none focus:border-pink-300" />
-                </label>
-                <IconCounter icon={Heart} count={wishlist.length} primary={primary} active={storePage === 'wishlist'} onClick={() => scrollToSection('wishlist', '/wishlist')} label="Wishlist" />
-                <IconCounter icon={ShoppingCart} count={itemCount} primary={primary} active={page === 'checkout'} onClick={() => { openStorePath('/cart'); setPage('checkout'); }} label="Cart" />
-              </div>
-            </>
-          ) : (
-            <>
-              <button type="button" onClick={() => { openStorePath(); setPage('products'); }} className="border-0 bg-transparent p-0 text-left">
-                <StoreLogo store={store} primary={primary} inverse={isPremium} />
-              </button>
-              <label className={`relative ${isMarketplace ? 'mx-auto block w-full max-w-2xl' : 'ml-auto hidden w-[420px] lg:block'}`}>
-                <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search products, brands, categories..." className={`h-12 w-full rounded-full border pl-12 pr-4 text-sm font-semibold outline-none ${isPremium ? 'border-amber-300/30 bg-white/10 text-white placeholder:text-amber-100/70' : 'border-slate-200 bg-white text-slate-900'}`} />
-              </label>
-              <nav className="hidden items-center gap-1 xl:flex">
-                {navItems.slice(0, isMarketplace ? 4 : 6).map(([label, onClick]) => <button key={label} type="button" onClick={onClick} className={`rounded-full px-4 py-2 text-sm font-black ${isPremium ? 'text-slate-200 hover:bg-white/10' : 'text-slate-700 hover:bg-slate-100'}`}>{label}</button>)}
-              </nav>
-              <IconCounter icon={Heart} count={wishlist.length} primary={primary} active={storePage === 'wishlist'} onClick={() => scrollToSection('wishlist', '/wishlist')} label="Wishlist" />
-              <IconCounter icon={ShoppingCart} count={itemCount} primary={primary} active={page === 'checkout'} onClick={() => { openStorePath('/cart'); setPage('checkout'); }} label="Cart" />
-            </>
-          )}
-        </div>
-        {isMarketplace ? (
-          <div className="mx-auto hidden max-w-[1780px] items-center gap-2 px-4 pb-3 sm:px-6 lg:flex lg:px-8">
-            {categories.map((item) => <button key={item} type="button" onClick={() => { setCategory(item); scrollToSection('products', '/categories'); }} className="rounded-full border border-orange-100 bg-orange-50 px-4 py-2 text-xs font-black text-orange-800">{item}</button>)}
+        {store?.theme?.announcement ? <div data-store-field="announcement" className="px-4 py-2 text-center text-sm font-semibold text-white" style={{ background: primary }}>{store.theme.announcement}</div> : null}
+        <div className="mx-auto flex max-w-[1780px] flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
+          <button type="button" aria-label="Store home" onClick={() => { openStorePath(); setPage('products'); }} className="min-w-0 flex-1 border-0 bg-transparent p-0 text-left lg:flex-none">
+            <StoreLogo data-store-field="logoUrl" store={store} primary={primary} inverse={isPremium} />
+          </button>
+          <nav aria-label="Store navigation" className="order-3 flex w-full items-center justify-center gap-1 lg:order-none lg:w-auto lg:gap-3">
+            {storeNavigation.map(([label, path]) => <Link key={label} to={`/store/${slug}${path}`} aria-current={(path ? storePage === path.slice(1) : !storePage && !productId) ? 'page' : undefined} className={`rounded-full px-3 py-2 text-sm font-bold no-underline sm:px-4 ${isPremium ? 'text-slate-200 hover:bg-white/10 aria-[current=page]:bg-white/10' : 'text-slate-700 hover:bg-slate-100 aria-[current=page]:bg-slate-100'}`}>{label}</Link>)}
+          </nav>
+          <div className="flex shrink-0 items-center gap-2">
+            <IconCounter icon={Heart} count={wishlist.length} primary={primary} active={storePage === 'wishlist'} onClick={() => scrollToSection('wishlist', '/wishlist')} label="Wishlist" />
+            <IconCounter icon={ShoppingCart} count={itemCount} primary={primary} active={page === 'checkout'} onClick={() => { openStorePath('/cart'); setPage('checkout'); }} label="Cart" />
           </div>
-        ) : null}
+        </div>
       </header>
     );
 
     const Hero = !storePage && store?.theme?.showHero !== false ? (
       <section data-store-section="hero" className={`relative overflow-hidden border shadow-sm ${heroFrame}`}>
-        <img src={bannerImage} alt={`${store?.storeName || 'Online Store'} banner`} style={{ objectFit: store?.theme?.bannerFit || 'cover', objectPosition: store?.theme?.bannerPosition || 'center' }} className="h-[260px] w-full object-cover sm:h-[340px] lg:h-[430px]" />
+        <img data-store-field="bannerImageUrl" src={bannerImage} alt={`${store?.storeName || 'Online Store'} banner`} style={{ objectFit: store?.theme?.bannerFit || 'cover', objectPosition: store?.theme?.bannerPosition || 'center' }} className="h-[260px] w-full object-cover sm:h-[340px] lg:h-[430px]" />
         {(store?.theme?.heroTitle || store?.theme?.heroText || store?.theme?.heroButton) ? <div className="store-banner-content absolute inset-0 flex flex-col items-start justify-center bg-gradient-to-r from-black/75 to-transparent p-8 text-white sm:p-14">
-          {store.theme.heroTitle ? <h1 className="m-0 max-w-2xl text-3xl font-bold sm:text-5xl">{store.theme.heroTitle}</h1> : null}
-          {store.theme.heroText ? <p className="mt-4 max-w-xl text-base sm:text-lg">{store.theme.heroText}</p> : null}
-          {store.theme.heroButton ? <button type="button" onClick={() => scrollToSection('products', '/products')} style={{ background: primary }} className={`${primaryButton} mt-4 min-h-11`}>{store.theme.heroButton}</button> : null}
+          {store.theme.heroTitle ? <h1 className="m-0 max-w-2xl text-3xl font-bold sm:text-5xl" data-store-field="heroTitle">{store.theme.heroTitle}</h1> : null}
+          {store.theme.heroText ? <p className="mt-4 max-w-xl text-base sm:text-lg" data-store-field="heroText">{store.theme.heroText}</p> : null}
+          {store.theme.heroButton ? <button type="button" onClick={() => scrollToSection('products', '/products')} style={{ background: primary }} className={`${primaryButton} mt-4 min-h-11`} data-store-field="heroButton">{store.theme.heroButton}</button> : null}
         </div> : null}
       </section>
     ) : null;
 
     return (
-      <main className={`store-design min-h-screen ${pageShell}`} style={{ fontFamily: store?.theme?.fontFamily === 'serif' ? 'Georgia, serif' : store?.theme?.fontFamily === 'mono' ? 'ui-monospace, monospace' : 'Arial, sans-serif' }} onClickCapture={preview ? (event) => { event.preventDefault(); event.stopPropagation(); onPreviewSelect?.(event.target.closest('[data-store-section]')?.dataset.storeSection); } : undefined}>
+      <StoreCanvas theme={store.theme} page={designPage} slug={slug} preview={preview} selectedSection={preview?.selectedSection}><main className={`store-design min-h-screen ${pageShell}`} style={{ fontFamily: store?.theme?.fontFamily === 'serif' ? 'Georgia, serif' : store?.theme?.fontFamily === 'mono' ? 'ui-monospace, monospace' : 'Arial, sans-serif' }} onClickCapture={preview ? (event) => { event.preventDefault(); event.stopPropagation(); onPreviewSelect?.(event.target.closest('[data-store-section]')?.dataset.storeSection); } : undefined}>
         <style>{sectionStylesCss(store?.theme?.sectionStyles)}</style>
         {Header}
-        <section className="mx-auto max-w-[1780px] px-4 py-6 sm:px-6 lg:px-8">
+        <section data-store-content="true" className="mx-auto max-w-[1780px] px-4 py-6 sm:px-6 lg:px-8">
           {message ? <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-700">{message}</div> : null}
           {error ? <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-black text-red-700">{error}</div> : null}
 
           {productDetail ? (
-            <section className={`border p-5 shadow-sm sm:p-6 ${surface} ${isBoutique ? 'rounded-[34px]' : 'rounded-2xl'}`}>
+            <section data-store-section="details" className={`border p-5 shadow-sm sm:p-6 ${surface} ${isBoutique ? 'rounded-[34px]' : 'rounded-2xl'}`}>{store.theme.detailsIntro && <p className="mb-5" data-store-field="detailsIntro">{store.theme.detailsIntro}</p>}
               <Link to={`/store/${slug}`} className={`inline-flex items-center gap-2 text-sm font-black no-underline ${isPremium ? 'text-slate-200' : 'text-blue-600'}`}><ArrowLeft size={16} /> Back to products</Link>
               <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(360px,0.85fr)_1fr]">
                 <div className={`overflow-hidden ${isBoutique ? 'rounded-[34px]' : 'rounded-2xl'}`}><div className="aspect-square"><ProductImage product={productDetail} /></div></div>
@@ -642,7 +621,7 @@ export function PublicStorePage({ preview, onPreviewSelect } = {}) {
                   <h2 className={`m-0 mt-3 text-4xl font-black leading-tight tracking-normal sm:text-6xl ${darkText}`}>{productDetail.name}</h2>
                   <p className={`mt-5 max-w-2xl text-base leading-7 ${mutedText}`}>{productDetail.description || 'Available online'}</p>
                   <div className={`mt-6 text-4xl font-black ${darkText}`}>{formatMoney(productDetail.rate)}</div>
-                  <button type="button" onClick={() => addToCart(productDetail)} style={{ background: primary }} className={`${primaryButton} mt-7 h-12 w-fit`}><ShoppingCart size={18} /> Add to cart</button>
+                  <button type="button" onClick={() => addToCart(productDetail)} style={{ background: primary }} data-store-field="addToCartLabel" className={`${primaryButton} mt-7 h-12 w-fit`}><ShoppingCart size={18} /> {store.theme.addToCartLabel || 'Add to cart'}</button>
                 </div>
               </div>
             </section>
@@ -650,13 +629,13 @@ export function PublicStorePage({ preview, onPreviewSelect } = {}) {
 
           {page === 'products' ? (
             <>
-              {Hero}
-              {['products', 'categories', undefined].includes(storePage) ? (
+              {!productId && Hero}
+              {!productId && ['products', 'categories', undefined].includes(storePage) ? (
                 <section data-store-section="products" id="products" className={storePage ? `border p-5 shadow-sm ${surface} ${isBoutique ? 'rounded-[34px]' : 'rounded-2xl'}` : 'mt-8'}>
                   <div className={`mb-5 flex flex-col gap-4 ${isMarketplace ? 'xl:flex-row xl:items-center xl:justify-between' : 'xl:flex-row xl:items-end xl:justify-between'}`}>
                     <div>
                       <p className={`m-0 text-xs font-black uppercase tracking-[0.24em] ${mutedText}`}>{isMarketplace ? 'Catalog' : isPremium ? 'Selection' : 'Curated Shop'}</p>
-                      <h2 className={`m-0 mt-2 text-4xl font-black tracking-normal ${darkText}`}>{storePage === 'categories' ? 'Categories' : (store?.theme?.productsTitle || 'Products')}</h2>
+                      <h2 data-store-field="productsTitle" className={`m-0 mt-2 text-4xl font-black tracking-normal ${darkText}`}>{storePage === 'categories' ? 'Categories' : (store?.theme?.productsTitle || 'Products')}</h2>
                       <p className={`m-0 mt-1 text-base font-semibold ${mutedText}`}>{filteredProducts.length} available items</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
@@ -686,16 +665,21 @@ export function PublicStorePage({ preview, onPreviewSelect } = {}) {
                 </section>
               ) : null}
               {storePage === 'wishlist' ? (
-                <section id="wishlist" className={`border p-5 shadow-sm ${surface} ${isBoutique ? 'rounded-[34px]' : 'rounded-2xl'}`}>
+                <section data-store-section="wishlist" id="wishlist" className={`border p-5 shadow-sm ${surface} ${isBoutique ? 'rounded-[34px]' : 'rounded-2xl'}`}>
                   <div className="mb-5 flex items-end justify-between gap-3">
-                    <div><h2 className={`m-0 text-4xl font-black ${darkText}`}>Wishlist</h2><p className={`m-0 mt-1 ${mutedText}`}>{wishlistProducts.length} saved item(s)</p></div>
+                    <div><h2 className={`m-0 text-4xl font-black ${darkText}`} data-store-field="wishlistTitle">{store.theme.wishlistTitle || 'Wishlist'}</h2>{store.theme.wishlistText && <p data-store-field="wishlistText">{store.theme.wishlistText}</p>}<p className={`m-0 mt-1 ${mutedText}`}>{wishlistProducts.length} saved item(s)</p></div>
                     <button type="button" onClick={() => scrollToSection('products', '/products')} style={{ background: primary }} className={`${primaryButton} h-11`}>Continue shopping</button>
                   </div>
                   <div className={`grid gap-4 ${productGrid}`}>{wishlistProducts.map((product) => <TemplateProductCard key={product.id} product={product} slug={slug} onAdd={addToCart} onWishlist={toggleWishlist} wished primary={primary} variant={templateName} />)}</div>
                 </section>
               ) : null}
-              {(store?.theme?.showBenefits !== false && !storePage || storePage === 'offers') ? (
+              {productId ? <section data-store-section="related" className="mt-8"><h2 className="mb-5 text-3xl font-bold" data-store-field="relatedTitle">{store.theme.relatedTitle || 'You may also like'}</h2><div className={`grid gap-4 ${productGrid}`}>{products.filter((product) => String(product.id) !== String(productId)).slice(0, 4).map((product) => <TemplateProductCard key={product.id} product={product} slug={slug} onAdd={addToCart} onWishlist={toggleWishlist} wished={wishlist.includes(product.id)} primary={primary} variant={templateName} />)}</div></section> : null}
+              {storePage === 'about' ? <section data-store-section="about" className={`rounded-2xl border p-8 ${surface}`}><h2 className="text-3xl font-bold" data-store-field="aboutTitle">{store.theme.aboutTitle || store.storeName}</h2><p className="mt-5 whitespace-pre-wrap leading-8" data-store-field="aboutText">{store.theme.aboutText || store.theme.footerText || store.tagline || 'Discover our collection and contact us for more information.'}</p>{store.address && <p className="mt-4">{store.address}</p>}{store.phone && <a className="mt-4 block" href={`tel:${store.phone}`}>{store.phone}</a>}{store.email && <a className="mt-3 block" href={`mailto:${store.email}`}>{store.email}</a>}</section> : null}
+              {storePage === 'contact' ? <section data-store-section="contact" className={`rounded-2xl border p-8 ${surface}`}><h1 data-store-field="contactTitle" className="text-3xl font-bold">{store.theme.contactTitle || 'Contact'}</h1><p data-store-field="contactText" className="mt-4 whitespace-pre-wrap leading-7">{store.theme.contactText || `Get in touch with ${store.storeName}.`}</p><div className="mt-6 grid gap-4">{store.phone && <a className="flex items-center gap-3" href={`tel:${store.phone}`}><Phone size={20}/>{store.phone}</a>}{store.email && <a className="flex items-center gap-3 break-all" href={`mailto:${store.email}`}><Mail size={20}/>{store.email}</a>}{store.address && <p className="flex items-center gap-3"><MapPin size={20}/>{store.address}</p>}{!store.phone && !store.email && !store.address && <p>Contact details will be added soon.</p>}</div></section> : null}
+              {storePage === 'offers' ? <section data-store-section="products" className="mt-8"><h2 className="mb-5 text-3xl font-bold" data-store-field="productsTitle">{store.theme.productsTitle || 'Featured products'}</h2><div className={`grid gap-4 ${productGrid}`}>{products.filter((product) => product.featured || Number(product.mrp) > Number(product.rate)).map((product) => <TemplateProductCard key={product.id} product={product} slug={slug} onAdd={addToCart} onWishlist={toggleWishlist} wished={wishlist.includes(product.id)} primary={primary} variant={templateName} />)}</div></section> : null}
+              {(store?.theme?.showBenefits !== false && !storePage && !productId || storePage === 'offers') ? (
                 <section data-store-section="benefits" id="offers" className={`mt-8 grid gap-4 border p-5 shadow-sm lg:grid-cols-4 ${surface} ${isBoutique ? 'rounded-[30px]' : 'rounded-2xl'}`}>
+                  {(store.theme.benefitsTitle || store.theme.benefitsText) && <div style={{ gridColumn: '1 / -1' }} data-store-field="benefitsTitle">{store.theme.benefitsTitle && <h2 className="text-2xl font-bold" data-store-field="benefitsTitle">{store.theme.benefitsTitle}</h2>}{store.theme.benefitsText && <p data-store-field="benefitsText">{store.theme.benefitsText}</p>}</div>}
                   <HeroBenefit icon={Truck} title="Free Shipping" text="On all orders above Rs.999" tone="bg-blue-100 text-blue-600" />
                   <HeroBenefit icon={RefreshCw} title="Easy Returns" text="7 days hassle free returns" tone="bg-emerald-100 text-emerald-600" />
                   <HeroBenefit icon={ShieldCheck} title="Secure Payments" text="100% safe & secure" tone="bg-amber-100 text-amber-600" />
@@ -706,24 +690,24 @@ export function PublicStorePage({ preview, onPreviewSelect } = {}) {
           ) : null}
 
           {page === 'checkout' ? (
-            <section id="cart">
+            <section data-store-section="cart" id="cart">{store.theme.cartText && <p className="mb-4" data-store-field="cartText">{store.theme.cartText}</p>}
               <button type="button" onClick={() => { openStorePath(); setPage('products'); }} className="mb-4 inline-flex h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-black text-slate-700"><ArrowLeft size={16} /> Back to products</button>
               <div className={`grid gap-5 ${isMarketplace ? 'lg:grid-cols-[1fr_360px]' : 'lg:grid-cols-[1fr_440px]'}`}>
                 <div className={`border p-5 shadow-sm ${surface} ${isBoutique ? 'rounded-[34px]' : 'rounded-2xl'}`}>
-                  <div className="flex items-center justify-between"><h2 className={`m-0 text-3xl font-black ${darkText}`}>Cart</h2><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{itemCount} items</span></div>
+                  <div className="flex items-center justify-between"><h2 className={`m-0 text-3xl font-black ${darkText}`} data-store-field="cartTitle">{store.theme.cartTitle || 'Cart'}</h2><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{itemCount} items</span></div>
                   <div className="mt-4 divide-y divide-slate-100">{cart.map((item) => <div key={item.id} className="grid gap-3 py-4 sm:grid-cols-[1fr_auto_auto] sm:items-center"><div><strong className="line-clamp-1">{item.name}</strong><div className={`mt-1 text-sm font-semibold ${mutedText}`}>{formatMoney(item.rate)}</div></div><div className="inline-flex h-10 w-fit items-center rounded-full border border-slate-200 bg-white text-slate-700"><button type="button" onClick={() => changeQty(item.id, -1)} className="grid h-10 w-10 place-items-center"><Minus size={15} /></button><span className="min-w-8 text-center text-sm font-black">{item.qty}</span><button type="button" onClick={() => changeQty(item.id, 1)} className="grid h-10 w-10 place-items-center"><Plus size={15} /></button></div><div className="flex items-center justify-between gap-3 sm:justify-end"><strong>{formatMoney(Number(item.rate || 0) * item.qty)}</strong><button type="button" onClick={() => removeFromCart(item.id)} className="grid h-10 w-10 place-items-center rounded-full bg-red-50 text-red-600"><Trash2 size={16} /></button></div></div>)}</div>
                   {!cart.length ? <p className={`mt-4 rounded-xl px-4 py-5 text-center text-sm font-semibold ${isPremium ? 'bg-white/5 text-slate-300' : 'bg-slate-50 text-slate-500'}`}>Cart is empty.</p> : null}
                   <div className="mt-5 flex justify-between rounded-2xl px-4 py-4 text-lg font-black text-white" style={{ background: primary }}><span>Total</span><span>{formatMoney(total)}</span></div>
                 </div>
-                <form onSubmit={placeOrder} className={`border p-5 shadow-sm ${surface} ${isBoutique ? 'rounded-[34px]' : 'rounded-2xl'}`}>
-                  <h2 className={`m-0 text-3xl font-black ${darkText}`}>Place order</h2>
+                <form data-store-section="checkout" onSubmit={placeOrder} className={`border p-5 shadow-sm ${surface} ${isBoutique ? 'rounded-[34px]' : 'rounded-2xl'}`}>
+                  <h2 className={`m-0 text-3xl font-black ${darkText}`} data-store-field="checkoutTitle">{store.theme.checkoutTitle || 'Place order'}</h2>
                   <div className="mt-4 grid gap-3">
                     <input required value={customer.customerName} onChange={(event) => updateCustomer('customerName', event.target.value)} placeholder="Name" className={inputClass} />
                     <input required value={customer.customerPhone} onChange={(event) => updateCustomer('customerPhone', event.target.value)} placeholder="Phone" className={inputClass} />
-                    <input value={customer.customerEmail} onChange={(event) => updateCustomer('customerEmail', event.target.value)} placeholder="Email optional" className={inputClass} />
+                    <input data-store-field="checkoutEmail" value={customer.customerEmail} onChange={(event) => updateCustomer('customerEmail', event.target.value)} placeholder="Email optional" className={inputClass} />
                     <textarea value={customer.deliveryAddress} onChange={(event) => updateCustomer('deliveryAddress', event.target.value)} placeholder="Address" className="min-h-28 rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-50" />
-                    <textarea value={customer.notes} onChange={(event) => updateCustomer('notes', event.target.value)} placeholder="Notes optional" className="min-h-20 rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-50" />
-                    <button disabled={!cart.length || placing} style={{ background: primary }} className={`${primaryButton} h-12 disabled:opacity-50`}><ShoppingCart size={17} /> {placing ? 'Placing...' : 'Place order'}</button>
+                    <textarea data-store-field="checkoutNotes" value={customer.notes} onChange={(event) => updateCustomer('notes', event.target.value)} placeholder="Notes optional" className="min-h-20 rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-50" />
+                    <button data-store-field="checkoutButton" disabled={!cart.length || placing} style={{ background: primary }} className={`${primaryButton} h-12 disabled:opacity-50`}><ShoppingCart size={17} /> {placing ? 'Placing...' : store.theme.checkoutButton || 'Place order'}</button>
                   </div>
                 </form>
               </div>
@@ -732,13 +716,13 @@ export function PublicStorePage({ preview, onPreviewSelect } = {}) {
         </section>
         {store?.theme?.showFooter !== false || storePage === 'about' ? <footer data-store-section="footer" id="about" className={`${isPremium ? 'bg-black' : isMarketplace ? 'bg-orange-950' : 'bg-pink-950'} mt-8 text-white`}>
           <div className="mx-auto grid max-w-[1780px] gap-8 px-5 py-12 sm:px-8 md:grid-cols-[1.4fr_repeat(3,1fr)] lg:px-10">
-            <div><StoreLogo store={store} primary={primary} inverse /><p className="mt-5 max-w-sm text-sm leading-7 text-slate-300">{store?.theme?.footerText || store?.tagline || 'Your trusted destination for quality products at the best prices.'}</p></div>
+            <div><StoreLogo data-store-field="logoUrl" store={store} primary={primary} inverse /><p className="mt-5 max-w-sm text-sm leading-7 text-slate-300" data-store-field="footerText">{store?.theme?.footerText || store?.tagline || 'Your trusted destination for quality products at the best prices.'}</p></div>
             <div><h3 className="m-0 text-sm font-black">Shop</h3><div className="mt-4 grid gap-2 text-sm text-slate-300">{['Products', 'Categories', 'Offers', 'Wishlist'].map((item) => <button key={item} type="button" onClick={() => scrollToSection(item === 'Offers' ? 'offers' : item === 'Wishlist' ? 'wishlist' : 'products', `/${item.toLowerCase()}`)} className="w-fit border-0 bg-transparent p-0 text-left text-slate-300 hover:text-white">{item}</button>)}</div></div>
             <div><h3 className="m-0 text-sm font-black">Support</h3><div className="mt-4 grid gap-2 text-sm text-slate-300">{['Shipping Policy', 'Return & Refund', 'Terms & Conditions', 'Privacy Policy'].map((item) => <button key={item} type="button" onClick={() => showNotice(`${item} page will be connected soon.`)} className="w-fit border-0 bg-transparent p-0 text-left text-slate-300 hover:text-white">{item}</button>)}</div></div>
             <div><h3 className="m-0 text-sm font-black">Contact</h3><div className="mt-4 grid gap-3 text-sm text-slate-300"><a className="inline-flex items-center gap-2 text-slate-300 no-underline hover:text-white" href={`mailto:${store?.email || 'support@gobright.com'}`}><Mail size={15} /> {store?.email || 'support@gobright.com'}</a><a className="inline-flex items-center gap-2 text-slate-300 no-underline hover:text-white" href={`tel:${store?.phone || '+919876543210'}`}><Phone size={15} /> {store?.phone || '+91 98765 43210'}</a><span className="inline-flex items-center gap-2"><MapPin size={15} /> {store?.address || 'Chennai, India'}</span></div></div>
           </div>
         </footer> : null}
-      </main>
+      </main></StoreCanvas>
     );
   }
 
@@ -747,7 +731,7 @@ export function PublicStorePage({ preview, onPreviewSelect } = {}) {
       <header className={`fixed inset-x-0 top-0 z-50 border-b backdrop-blur ${storefrontTheme.header}`}>
         <div className="mx-auto flex max-w-[1780px] items-center gap-5 px-4 py-3 sm:px-6 lg:px-8">
           <button type="button" onClick={() => { openStorePath(); setPage('products'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="border-0 bg-transparent p-0 text-left">
-            <StoreLogo store={store} primary={primary} />
+            <StoreLogo data-store-field="logoUrl" store={store} primary={primary} />
           </button>
           <nav className="hidden items-center gap-2 lg:flex">
             <NavButton icon={Home} label="Home" primary={primary} active={!storePage && page === 'products'} onClick={() => { openStorePath(); setPage('products'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
@@ -808,7 +792,7 @@ export function PublicStorePage({ preview, onPreviewSelect } = {}) {
               </button>
               <div className="grid min-h-[250px] lg:grid-cols-[1fr_340px]">
                 <div className={`relative overflow-hidden bg-gradient-to-r ${storefrontTheme.heroPanel} px-8 py-8 sm:px-16`}>
-                  <img src={bannerImage} alt="Online shopping banner" className="absolute inset-y-0 right-0 hidden h-full w-[58%] object-cover opacity-90 lg:block" />
+                  <img data-store-field="bannerImageUrl" src={bannerImage} alt="Online shopping banner" className="absolute inset-y-0 right-0 hidden h-full w-[58%] object-cover opacity-90 lg:block" />
                   <div className="absolute inset-y-0 right-0 hidden w-[62%] bg-gradient-to-r from-blue-50 via-white/20 to-transparent lg:block" />
                   <div className="relative z-[1] max-w-3xl">
                     <p className="m-0 text-sm font-black uppercase tracking-[0.32em]" style={{ color: primary }}>New Arrivals</p>
@@ -831,6 +815,7 @@ export function PublicStorePage({ preview, onPreviewSelect } = {}) {
                   </div>
                 </div>
                 <aside className="hidden gap-8 p-8 lg:grid" style={{ background: `${primary}12` }}>
+                  {(store.theme.benefitsTitle || store.theme.benefitsText) && <div style={{ gridColumn: '1 / -1' }} data-store-field="benefitsTitle">{store.theme.benefitsTitle && <h2 className="text-2xl font-bold" data-store-field="benefitsTitle">{store.theme.benefitsTitle}</h2>}{store.theme.benefitsText && <p data-store-field="benefitsText">{store.theme.benefitsText}</p>}</div>}
                   <HeroBenefit icon={Truck} title="Free Shipping" text="On all orders above Rs.999" tone="bg-emerald-100 text-emerald-600" />
                   <HeroBenefit icon={ShieldCheck} title="Secure Payment" text="100% secure checkout" tone="bg-blue-100 text-blue-600" />
                   <HeroBenefit icon={Headphones} title="24/7 Support" text="We're here to help" tone="bg-amber-100 text-amber-600" />
@@ -940,16 +925,16 @@ export function PublicStorePage({ preview, onPreviewSelect } = {}) {
                 </div>
               </div>
 
-              <form onSubmit={placeOrder} className={`border p-5 shadow-sm sm:p-6 ${storefrontTheme.card}`}>
+              <form data-store-section="checkout" onSubmit={placeOrder} className={`border p-5 shadow-sm sm:p-6 ${storefrontTheme.card}`}>
                 <h2 className="m-0 text-2xl font-black tracking-normal">Place order</h2>
                 <div className="mt-4 grid gap-3">
                   <input required value={customer.customerName} onChange={(event) => updateCustomer('customerName', event.target.value)} placeholder="Name" className={inputClass} />
                   <input required value={customer.customerPhone} onChange={(event) => updateCustomer('customerPhone', event.target.value)} placeholder="Phone" className={inputClass} />
-                  <input value={customer.customerEmail} onChange={(event) => updateCustomer('customerEmail', event.target.value)} placeholder="Email optional" className={inputClass} />
+                  <input data-store-field="checkoutEmail" value={customer.customerEmail} onChange={(event) => updateCustomer('customerEmail', event.target.value)} placeholder="Email optional" className={inputClass} />
                   <textarea value={customer.deliveryAddress} onChange={(event) => updateCustomer('deliveryAddress', event.target.value)} placeholder="Address" className="min-h-28 rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-50" />
-                  <textarea value={customer.notes} onChange={(event) => updateCustomer('notes', event.target.value)} placeholder="Notes optional" className="min-h-20 rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-50" />
-                  <button disabled={!cart.length || placing} style={{ background: primary }} className="mt-1 inline-flex h-12 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black text-white shadow-lg transition disabled:cursor-not-allowed disabled:opacity-50">
-                    <ShoppingCart size={17} /> {placing ? 'Placing...' : 'Place order'}
+                  <textarea data-store-field="checkoutNotes" value={customer.notes} onChange={(event) => updateCustomer('notes', event.target.value)} placeholder="Notes optional" className="min-h-20 rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-50" />
+                  <button data-store-field="checkoutButton" disabled={!cart.length || placing} style={{ background: primary }} className="mt-1 inline-flex h-12 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black text-white shadow-lg transition disabled:cursor-not-allowed disabled:opacity-50">
+                    <ShoppingCart size={17} /> {placing ? 'Placing...' : store.theme.checkoutButton || 'Place order'}
                   </button>
                 </div>
               </form>
@@ -961,7 +946,7 @@ export function PublicStorePage({ preview, onPreviewSelect } = {}) {
       <footer id="about" className={`mt-8 ${storefrontTheme.footer}`}>
         <div className="mx-auto grid max-w-[1780px] gap-10 px-5 py-12 sm:px-8 md:grid-cols-[1.4fr_0.8fr_0.9fr_1fr_1fr] lg:px-10">
           <div>
-            <StoreLogo store={store} primary={primary} inverse />
+            <StoreLogo data-store-field="logoUrl" store={store} primary={primary} inverse />
             <p className="mt-6 max-w-xs text-sm leading-7 text-slate-300">Your trusted destination for quality products at the best prices.</p>
           </div>
           <div>

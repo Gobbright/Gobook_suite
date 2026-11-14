@@ -3,6 +3,16 @@ export const isCredit = (row) => ['credit-note', 'sales-return'].includes(row.do
 export const isDebit = (row) => row.documentType === 'debit-note';
 export const gstinStatus = (row) => !row.gstin ? 'Unregistered' : GSTIN_PATTERN.test(row.gstin) ? 'Format valid' : 'Invalid format';
 const amount = (value) => Number(value) || 0;
+export function gstr1Sections(rows) {
+  const sections = { b2b: [], b2cl: [], b2cs: [], exports: [], notes: [], advances: [], credit: [], debit: [] };
+  for (const row of rows) {
+    const category = row.returnSection || (isCredit(row) || isDebit(row) ? 'notes' : ['export-wp', 'export-wop'].includes(row.invoiceType) ? 'exports' : row.gstin ? 'b2b' : 'b2cs');
+    if (sections[category]) sections[category].push(row);
+    if (isCredit(row)) sections.credit.push(row);
+    if (isDebit(row)) sections.debit.push(row);
+  }
+  return sections;
+}
 export function gstr1Documents(data = {}) {
   if (Array.isArray(data.sourceDocuments)) return data.sourceDocuments.map((row, index) => ({ ...row, key: `${row.sourceId || row.invoiceNo}-${index}` }));
   return [

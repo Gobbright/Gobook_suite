@@ -55,7 +55,7 @@ function Review({ initial, fileName, products, vendors, hasItems, onApply, onClo
         {hasItems && <label className="purchase-pdf-replace"><input type="checkbox" checked={replace} onChange={(event) => setReplace(event.target.checked)} />Replace existing items, charges and invoice discount with the reviewed PDF details.</label>}
         {error && <p className="purchase-pdf-error" role="alert">{error}</p>}
       </div>
-      <footer><span>{data.items.length} item(s) · Review taxes and invoice total in Purchase Entry.</span><button type="button" onClick={onClose}>Cancel</button><button type="button" className="purchase-pdf-primary" onClick={apply}>Apply to Purchase Entry</button></footer>
+      <footer><span>{data.items.length} item(s) · {issues.length ? `Resolve ${issues.length} highlighted issue(s) before applying.` : 'Review taxes and invoice total in Purchase Entry.'}</span><button type="button" onClick={onClose}>Cancel</button><button type="button" className="purchase-pdf-primary" disabled={issues.length > 0} onClick={apply}>Apply to Purchase Entry</button></footer>
     </section>
   </div>, document.body);
 }

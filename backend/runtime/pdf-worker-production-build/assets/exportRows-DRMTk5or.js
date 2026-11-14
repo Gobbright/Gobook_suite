@@ -1,0 +1,1 @@
+import{r as e}from"./reportDownloadService-CVceES6k.js";function t(t,n,r){let i=(r?.length?r:[...new Set(n.flatMap(e=>Object.keys(e)))]).filter(e=>!/password|secret|token/i.test(e));e(t,i,n.map(e=>i.map(t=>{let n=e[t];return n&&typeof n==`object`?JSON.stringify(n):n??``})))}export{t};

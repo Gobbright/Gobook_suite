@@ -1,0 +1,1 @@
+function e(e,t,n){if(!t&&!n)return!0;if(!e)return!1;let r=new Date(e);if(Number.isNaN(r.getTime()))return!1;let i=t?new Date(`${t}T00:00:00`):null,a=n?new Date(`${n}T23:59:59.999`):null;return!(i&&r<i||a&&r>a)}function t(e,t){return{...e?{dateFrom:e}:{},...t?{dateTo:t}:{}}}export{e as n,t};

@@ -1,0 +1,343 @@
+import { createHotContext as __vite__createHotContext } from "/@vite/client";import.meta.hot = __vite__createHotContext("/src/features/categories/common/modules/inventory/StockAlertThresholds.jsx");const useEffect = __vite__cjsImport0_react["useEffect"]; const useRef = __vite__cjsImport0_react["useRef"]; const useState = __vite__cjsImport0_react["useState"];const createPortal = __vite__cjsImport1_reactDom["createPortal"];const _jsxDEV = __vite__cjsImport5_react_jsxDevRuntime["jsxDEV"];import __vite__cjsImport0_react from "/node_modules/.vite/deps/react.js?v=0398a113";
+import __vite__cjsImport1_reactDom from "/node_modules/.vite/deps/react-dom.js?v=0398a113";
+import { api } from "/src/services/api.js";
+import { SelectDropdown } from "/src/components/forms/SelectDropdown.jsx";
+import { useFocusTrap } from "/src/hooks/useFocusTrap.js";
+var _jsxFileName = "E:/Gobright Projects/Gobook_suite/Gobook_suite/frontend/src/features/categories/common/modules/inventory/StockAlertThresholds.jsx";
+import __vite__cjsImport5_react_jsxDevRuntime from "/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=0398a113";
+var _s = $RefreshSig$();
+export function StockAlertThresholds({ alert, onClose, onSaved }) {
+	_s();
+	const [search, setSearch] = useState("");
+	const [products, setProducts] = useState([]);
+	const [productId, setProductId] = useState(alert?.productId || "");
+	const [config, setConfig] = useState(null);
+	const [scope, setScope] = useState("product");
+	const [location, setLocation] = useState("");
+	const [values, setValues] = useState({
+		minStockLevel: "",
+		maxStockLevel: "",
+		reorderLevel: "",
+		enabled: true
+	});
+	const [loading, setLoading] = useState(false);
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState("");
+	const busy = useRef(false);
+	const close = () => {
+		if (!busy.current) onClose();
+	};
+	const ref = useFocusTrap({ onClose: close });
+	useEffect(() => {
+		let active = true;
+		const timer = setTimeout(() => api.invListProducts({
+			search,
+			itemType: "Product",
+			page: 1,
+			limit: 50
+		}).then((result) => {
+			if (active) setProducts(result.data || []);
+		}).catch((failure) => {
+			if (active) setError(failure.message || "Unable to find products.");
+		}), 150);
+		return () => {
+			active = false;
+			clearTimeout(timer);
+		};
+	}, [search]);
+	function choose(nextScope, nextLocation, data = config) {
+		setScope(nextScope);
+		setLocation(nextLocation);
+		const selected = nextLocation ? JSON.parse(nextLocation) : {};
+		const level = nextScope === "product" ? data.product : data.warehouseStockLevels.find((row) => row.warehouse === selected.name && row.branch === selected.branch);
+		setValues({
+			minStockLevel: String(level?.minStockLevel ?? ""),
+			maxStockLevel: String(level?.maxStockLevel ?? ""),
+			reorderLevel: String(level?.reorderLevel ?? ""),
+			enabled: nextScope === "product" ? data.product.stockAlertsEnabled : level?.enabled !== false
+		});
+	}
+	useEffect(() => {
+		setConfig(null);
+		if (!productId) return undefined;
+		let active = true;
+		setLoading(true);
+		setError("");
+		api.invGetAlertThresholds(productId).then((data) => {
+			if (!active) return;
+			setConfig(data);
+			const selected = data.warehouses.find((warehouse) => warehouse.name === alert?.warehouse && warehouse.branch === alert?.branch);
+			const nextScope = selected || !data.canEditProduct ? "warehouse" : "product";
+			choose(nextScope, selected ? JSON.stringify(selected) : "", data);
+		}).catch((failure) => {
+			if (active) setError(failure.message || "Unable to load thresholds.");
+		}).finally(() => {
+			if (active) setLoading(false);
+		});
+		return () => {
+			active = false;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [productId]);
+	async function save(event) {
+		event.preventDefault();
+		if (busy.current) return;
+		setError("");
+		setSaving(true);
+		busy.current = true;
+		try {
+			const selected = scope === "warehouse" && location ? JSON.parse(location) : {};
+			const body = {
+				scope,
+				warehouse: selected.name,
+				branch: selected.branch,
+				enabled: values.enabled
+			};
+			for (const field of [
+				"minStockLevel",
+				"maxStockLevel",
+				"reorderLevel"
+			]) {
+				if (values[field] === "" && scope === "product") throw new Error("Product thresholds must be entered, including zero where no limit is configured.");
+				body[field] = values[field] === "" ? null : Number(values[field]);
+			}
+			await api.invSaveAlertThresholds(productId, body);
+			onSaved();
+			onClose();
+		} catch (failure) {
+			setError(failure.message || "Unable to save thresholds.");
+		} finally {
+			setSaving(false);
+			busy.current = false;
+		}
+	}
+	const productOptions = products.map((product) => ({
+		value: product._id,
+		label: `${product.description} · ${product.code}`
+	}));
+	if (productId && !productOptions.some((product) => product.value === productId)) productOptions.unshift({
+		value: productId,
+		label: config?.product.description || alert?.description || "Selected product"
+	});
+	return createPortal(/* @__PURE__ */ _jsxDEV("div", {
+		className: "asa-threshold-overlay",
+		onClick: close,
+		children: /* @__PURE__ */ _jsxDEV("section", {
+			ref,
+			className: "asa-threshold-dialog",
+			role: "dialog",
+			"aria-modal": "true",
+			"aria-labelledby": "threshold-title",
+			onClick: (event) => event.stopPropagation(),
+			children: [
+				/* @__PURE__ */ _jsxDEV("header", { children: [/* @__PURE__ */ _jsxDEV("h2", {
+					id: "threshold-title",
+					children: "Stock Alert Thresholds"
+				}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 64,
+					columnNumber: 13
+				}, this), /* @__PURE__ */ _jsxDEV("button", {
+					type: "button",
+					disabled: saving,
+					onClick: close,
+					children: "Close"
+				}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 64,
+					columnNumber: 65
+				}, this)] }, void 0, true, {
+					fileName: _jsxFileName,
+					lineNumber: 64,
+					columnNumber: 5
+				}, this),
+				/* @__PURE__ */ _jsxDEV("label", { children: ["Find product", /* @__PURE__ */ _jsxDEV("input", {
+					"aria-label": "Find threshold product",
+					placeholder: "Product name, SKU or barcode",
+					value: search,
+					onChange: (event) => setSearch(event.target.value)
+				}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 65,
+					columnNumber: 24
+				}, this)] }, void 0, true, {
+					fileName: _jsxFileName,
+					lineNumber: 65,
+					columnNumber: 5
+				}, this),
+				/* @__PURE__ */ _jsxDEV(SelectDropdown, {
+					"aria-label": "Threshold product",
+					value: productId,
+					onChange: setProductId,
+					options: productOptions,
+					placeholder: "Select an inventory product"
+				}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 66,
+					columnNumber: 5
+				}, this),
+				error && /* @__PURE__ */ _jsxDEV("p", {
+					role: "alert",
+					className: "asa-config-error",
+					children: error
+				}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 67,
+					columnNumber: 15
+				}, this),
+				loading ? /* @__PURE__ */ _jsxDEV("p", {
+					role: "status",
+					children: "Loading saved thresholds…"
+				}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 68,
+					columnNumber: 16
+				}, this) : config && /* @__PURE__ */ _jsxDEV("form", {
+					onSubmit: save,
+					children: [
+						/* @__PURE__ */ _jsxDEV("label", { children: ["Threshold scope", /* @__PURE__ */ _jsxDEV(SelectDropdown, {
+							value: scope,
+							onChange: (value) => choose(value, location),
+							options: [...config.canEditProduct ? [{
+								value: "product",
+								label: "Product defaults"
+							}] : [], {
+								value: "warehouse",
+								label: "Warehouse override"
+							}]
+						}, void 0, false, {
+							fileName: _jsxFileName,
+							lineNumber: 69,
+							columnNumber: 29
+						}, this)] }, void 0, true, {
+							fileName: _jsxFileName,
+							lineNumber: 69,
+							columnNumber: 7
+						}, this),
+						scope === "warehouse" && /* @__PURE__ */ _jsxDEV("label", { children: ["Warehouse / Branch", /* @__PURE__ */ _jsxDEV(SelectDropdown, {
+							value: location,
+							onChange: (value) => choose(scope, value),
+							options: config.warehouses.map((warehouse) => ({
+								value: JSON.stringify(warehouse),
+								label: `${warehouse.name} · ${warehouse.branch || "No branch"}`
+							})),
+							placeholder: "Select a warehouse"
+						}, void 0, false, {
+							fileName: _jsxFileName,
+							lineNumber: 70,
+							columnNumber: 58
+						}, this)] }, void 0, true, {
+							fileName: _jsxFileName,
+							lineNumber: 70,
+							columnNumber: 33
+						}, this),
+						[
+							"minStockLevel",
+							"maxStockLevel",
+							"reorderLevel"
+						].map((field) => /* @__PURE__ */ _jsxDEV("label", { children: [field === "minStockLevel" ? "Minimum Stock" : field === "maxStockLevel" ? "Maximum Stock" : "Reorder Point", /* @__PURE__ */ _jsxDEV("input", {
+							"aria-label": field,
+							type: "number",
+							min: "0",
+							step: "any",
+							value: values[field],
+							placeholder: scope === "warehouse" ? `Inherit product default (${config.product[field]})` : "",
+							onChange: (event) => setValues((previous) => ({
+								...previous,
+								[field]: event.target.value
+							}))
+						}, void 0, false, {
+							fileName: _jsxFileName,
+							lineNumber: 71,
+							columnNumber: 202
+						}, this)] }, field, true, {
+							fileName: _jsxFileName,
+							lineNumber: 71,
+							columnNumber: 74
+						}, this)),
+						/* @__PURE__ */ _jsxDEV("label", {
+							className: "asa-enabled",
+							children: [/* @__PURE__ */ _jsxDEV("input", {
+								type: "checkbox",
+								checked: values.enabled,
+								onChange: (event) => setValues((previous) => ({
+									...previous,
+									enabled: event.target.checked
+								}))
+							}, void 0, false, {
+								fileName: _jsxFileName,
+								lineNumber: 72,
+								columnNumber: 38
+							}, this), "Enable alerts for this scope"]
+						}, void 0, true, {
+							fileName: _jsxFileName,
+							lineNumber: 72,
+							columnNumber: 7
+						}, this),
+						/* @__PURE__ */ _jsxDEV("p", { children: "Warehouse blanks inherit product defaults. Maximum 0 means no upper limit. Reorder Point 0 in product defaults uses Minimum Stock. Suggested quantity tops up available stock to Maximum, or Minimum if no Maximum is configured. No quantity is invented when no target is set." }, void 0, false, {
+							fileName: _jsxFileName,
+							lineNumber: 73,
+							columnNumber: 7
+						}, this),
+						!config.product.stockAlertsEnabled && scope === "warehouse" && /* @__PURE__ */ _jsxDEV("p", { children: "Product alerts are disabled globally; an owner must enable them before warehouse alerts can appear." }, void 0, false, {
+							fileName: _jsxFileName,
+							lineNumber: 74,
+							columnNumber: 71
+						}, this),
+						/* @__PURE__ */ _jsxDEV("button", {
+							type: "submit",
+							disabled: saving || !productId || scope === "warehouse" && !location,
+							children: saving ? "Saving…" : "Save Thresholds"
+						}, void 0, false, {
+							fileName: _jsxFileName,
+							lineNumber: 75,
+							columnNumber: 7
+						}, this)
+					]
+				}, void 0, true, {
+					fileName: _jsxFileName,
+					lineNumber: 68,
+					columnNumber: 75
+				}, this)
+			]
+		}, void 0, true, {
+			fileName: _jsxFileName,
+			lineNumber: 63,
+			columnNumber: 78
+		}, this)
+	}, void 0, false, {
+		fileName: _jsxFileName,
+		lineNumber: 63,
+		columnNumber: 23
+	}, this), document.body);
+}
+_s(StockAlertThresholds, "M/8360AaLUlgrOclw6zTv8WlDYI=", false, function() {
+	return [useFocusTrap];
+});
+_c = StockAlertThresholds;
+var _c;
+$RefreshReg$(_c, "StockAlertThresholds");
+import * as RefreshRuntime from "/@react-refresh";
+const inWebWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
+import * as __vite_react_currentExports from "/src/features/categories/common/modules/inventory/StockAlertThresholds.jsx";
+if (import.meta.hot && !inWebWorker) {
+  if (!window.$RefreshReg$) {
+    throw new Error(
+      "@vitejs/plugin-react can't detect preamble. Something is wrong."
+    );
+  }
+
+  const currentExports = __vite_react_currentExports;
+  queueMicrotask(() => {
+    RefreshRuntime.registerExportsForReactRefresh("E:/Gobright Projects/Gobook_suite/Gobook_suite/frontend/src/features/categories/common/modules/inventory/StockAlertThresholds.jsx", currentExports);
+    import.meta.hot.accept((nextExports) => {
+      if (!nextExports) return;
+      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate("E:/Gobright Projects/Gobook_suite/Gobook_suite/frontend/src/features/categories/common/modules/inventory/StockAlertThresholds.jsx", currentExports, nextExports);
+      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
+    });
+  });
+}
+function $RefreshReg$(type, id) { return RefreshRuntime.register(type, "E:/Gobright Projects/Gobook_suite/Gobook_suite/frontend/src/features/categories/common/modules/inventory/StockAlertThresholds.jsx" + ' ' + id); }
+function $RefreshSig$() { return RefreshRuntime.createSignatureFunctionForTransform(); }
+
+//# sourceMappingURL=data:application/json;base64,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IjozLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyB1c2VFZmZlY3QsIHVzZVJlZiwgdXNlU3RhdGUgfSBmcm9tICdyZWFjdCc7XHJcbmltcG9ydCB7IGNyZWF0ZVBvcnRhbCB9IGZyb20gJ3JlYWN0LWRvbSc7XHJcbmltcG9ydCB7IGFwaSB9IGZyb20gJy4uLy4uLy4uLy4uLy4uL3NlcnZpY2VzL2FwaS5qcyc7XHJcbmltcG9ydCB7IFNlbGVjdERyb3Bkb3duIH0gZnJvbSAnLi4vLi4vLi4vLi4vLi4vY29tcG9uZW50cy9mb3Jtcy9TZWxlY3REcm9wZG93bi5qc3gnO1xyXG5pbXBvcnQgeyB1c2VGb2N1c1RyYXAgfSBmcm9tICcuLi8uLi8uLi8uLi8uLi9ob29rcy91c2VGb2N1c1RyYXAuanMnO1xyXG5cclxuZXhwb3J0IGZ1bmN0aW9uIFN0b2NrQWxlcnRUaHJlc2hvbGRzKHsgYWxlcnQsIG9uQ2xvc2UsIG9uU2F2ZWQgfSkge1xyXG4gIGNvbnN0IFtzZWFyY2gsIHNldFNlYXJjaF0gPSB1c2VTdGF0ZSgnJyk7XHJcbiAgY29uc3QgW3Byb2R1Y3RzLCBzZXRQcm9kdWN0c10gPSB1c2VTdGF0ZShbXSk7XHJcbiAgY29uc3QgW3Byb2R1Y3RJZCwgc2V0UHJvZHVjdElkXSA9IHVzZVN0YXRlKGFsZXJ0Py5wcm9kdWN0SWQgfHwgJycpO1xyXG4gIGNvbnN0IFtjb25maWcsIHNldENvbmZpZ10gPSB1c2VTdGF0ZShudWxsKTtcclxuICBjb25zdCBbc2NvcGUsIHNldFNjb3BlXSA9IHVzZVN0YXRlKCdwcm9kdWN0Jyk7XHJcbiAgY29uc3QgW2xvY2F0aW9uLCBzZXRMb2NhdGlvbl0gPSB1c2VTdGF0ZSgnJyk7XHJcbiAgY29uc3QgW3ZhbHVlcywgc2V0VmFsdWVzXSA9IHVzZVN0YXRlKHsgbWluU3RvY2tMZXZlbDogJycsIG1heFN0b2NrTGV2ZWw6ICcnLCByZW9yZGVyTGV2ZWw6ICcnLCBlbmFibGVkOiB0cnVlIH0pO1xyXG4gIGNvbnN0IFtsb2FkaW5nLCBzZXRMb2FkaW5nXSA9IHVzZVN0YXRlKGZhbHNlKTtcclxuICBjb25zdCBbc2F2aW5nLCBzZXRTYXZpbmddID0gdXNlU3RhdGUoZmFsc2UpO1xyXG4gIGNvbnN0IFtlcnJvciwgc2V0RXJyb3JdID0gdXNlU3RhdGUoJycpO1xyXG4gIGNvbnN0IGJ1c3kgPSB1c2VSZWYoZmFsc2UpO1xyXG4gIGNvbnN0IGNsb3NlID0gKCkgPT4geyBpZiAoIWJ1c3kuY3VycmVudCkgb25DbG9zZSgpOyB9O1xyXG4gIGNvbnN0IHJlZiA9IHVzZUZvY3VzVHJhcCh7IG9uQ2xvc2U6IGNsb3NlIH0pO1xyXG4gIHVzZUVmZmVjdCgoKSA9PiB7XHJcbiAgICBsZXQgYWN0aXZlID0gdHJ1ZTtcclxuICAgIGNvbnN0IHRpbWVyID0gc2V0VGltZW91dCgoKSA9PiBhcGkuaW52TGlzdFByb2R1Y3RzKHsgc2VhcmNoLCBpdGVtVHlwZTogJ1Byb2R1Y3QnLCBwYWdlOiAxLCBsaW1pdDogNTAgfSkudGhlbigocmVzdWx0KSA9PiB7IGlmIChhY3RpdmUpIHNldFByb2R1Y3RzKHJlc3VsdC5kYXRhIHx8IFtdKTsgfSkuY2F0Y2goKGZhaWx1cmUpID0+IHsgaWYgKGFjdGl2ZSkgc2V0RXJyb3IoZmFpbHVyZS5tZXNzYWdlIHx8ICdVbmFibGUgdG8gZmluZCBwcm9kdWN0cy4nKTsgfSksIDE1MCk7XHJcbiAgICByZXR1cm4gKCkgPT4geyBhY3RpdmUgPSBmYWxzZTsgY2xlYXJUaW1lb3V0KHRpbWVyKTsgfTtcclxuICB9LCBbc2VhcmNoXSk7XHJcbiAgZnVuY3Rpb24gY2hvb3NlKG5leHRTY29wZSwgbmV4dExvY2F0aW9uLCBkYXRhID0gY29uZmlnKSB7XHJcbiAgICBzZXRTY29wZShuZXh0U2NvcGUpOyBzZXRMb2NhdGlvbihuZXh0TG9jYXRpb24pO1xyXG4gICAgY29uc3Qgc2VsZWN0ZWQgPSBuZXh0TG9jYXRpb24gPyBKU09OLnBhcnNlKG5leHRMb2NhdGlvbikgOiB7fTtcclxuICAgIGNvbnN0IGxldmVsID0gbmV4dFNjb3BlID09PSAncHJvZHVjdCcgPyBkYXRhLnByb2R1Y3QgOiBkYXRhLndhcmVob3VzZVN0b2NrTGV2ZWxzLmZpbmQoKHJvdykgPT4gcm93LndhcmVob3VzZSA9PT0gc2VsZWN0ZWQubmFtZSAmJiByb3cuYnJhbmNoID09PSBzZWxlY3RlZC5icmFuY2gpO1xyXG4gICAgc2V0VmFsdWVzKHsgbWluU3RvY2tMZXZlbDogU3RyaW5nKGxldmVsPy5taW5TdG9ja0xldmVsID8/ICcnKSwgbWF4U3RvY2tMZXZlbDogU3RyaW5nKGxldmVsPy5tYXhTdG9ja0xldmVsID8/ICcnKSwgcmVvcmRlckxldmVsOiBTdHJpbmcobGV2ZWw/LnJlb3JkZXJMZXZlbCA/PyAnJyksIGVuYWJsZWQ6IG5leHRTY29wZSA9PT0gJ3Byb2R1Y3QnID8gZGF0YS5wcm9kdWN0LnN0b2NrQWxlcnRzRW5hYmxlZCA6IGxldmVsPy5lbmFibGVkICE9PSBmYWxzZSB9KTtcclxuICB9XHJcbiAgdXNlRWZmZWN0KCgpID0+IHtcclxuICAgIHNldENvbmZpZyhudWxsKTtcclxuICAgIGlmICghcHJvZHVjdElkKSByZXR1cm4gdW5kZWZpbmVkO1xyXG4gICAgbGV0IGFjdGl2ZSA9IHRydWU7IHNldExvYWRpbmcodHJ1ZSk7IHNldEVycm9yKCcnKTtcclxuICAgIGFwaS5pbnZHZXRBbGVydFRocmVzaG9sZHMocHJvZHVjdElkKS50aGVuKChkYXRhKSA9PiB7XHJcbiAgICAgIGlmICghYWN0aXZlKSByZXR1cm47XHJcbiAgICAgIHNldENvbmZpZyhkYXRhKTtcclxuICAgICAgY29uc3Qgc2VsZWN0ZWQgPSBkYXRhLndhcmVob3VzZXMuZmluZCgod2FyZWhvdXNlKSA9PiB3YXJlaG91c2UubmFtZSA9PT0gYWxlcnQ/LndhcmVob3VzZSAmJiB3YXJlaG91c2UuYnJhbmNoID09PSBhbGVydD8uYnJhbmNoKTtcclxuICAgICAgY29uc3QgbmV4dFNjb3BlID0gc2VsZWN0ZWQgfHwgIWRhdGEuY2FuRWRpdFByb2R1Y3QgPyAnd2FyZWhvdXNlJyA6ICdwcm9kdWN0JztcclxuICAgICAgY2hvb3NlKG5leHRTY29wZSwgc2VsZWN0ZWQgPyBKU09OLnN0cmluZ2lmeShzZWxlY3RlZCkgOiAnJywgZGF0YSk7XHJcbiAgICB9KS5jYXRjaCgoZmFpbHVyZSkgPT4geyBpZiAoYWN0aXZlKSBzZXRFcnJvcihmYWlsdXJlLm1lc3NhZ2UgfHwgJ1VuYWJsZSB0byBsb2FkIHRocmVzaG9sZHMuJyk7IH0pLmZpbmFsbHkoKCkgPT4geyBpZiAoYWN0aXZlKSBzZXRMb2FkaW5nKGZhbHNlKTsgfSk7XHJcbiAgICByZXR1cm4gKCkgPT4geyBhY3RpdmUgPSBmYWxzZTsgfTtcclxuICAvLyBlc2xpbnQtZGlzYWJsZS1uZXh0LWxpbmUgcmVhY3QtaG9va3MvZXhoYXVzdGl2ZS1kZXBzXHJcbiAgfSwgW3Byb2R1Y3RJZF0pO1xyXG4gIGFzeW5jIGZ1bmN0aW9uIHNhdmUoZXZlbnQpIHtcclxuICAgIGV2ZW50LnByZXZlbnREZWZhdWx0KCk7IGlmIChidXN5LmN1cnJlbnQpIHJldHVybjtcclxuICAgIHNldEVycm9yKCcnKTsgc2V0U2F2aW5nKHRydWUpOyBidXN5LmN1cnJlbnQgPSB0cnVlO1xyXG4gICAgdHJ5IHtcclxuICAgICAgY29uc3Qgc2VsZWN0ZWQgPSBzY29wZSA9PT0gJ3dhcmVob3VzZScgJiYgbG9jYXRpb24gPyBKU09OLnBhcnNlKGxvY2F0aW9uKSA6IHt9O1xyXG4gICAgICBjb25zdCBib2R5ID0geyBzY29wZSwgd2FyZWhvdXNlOiBzZWxlY3RlZC5uYW1lLCBicmFuY2g6IHNlbGVjdGVkLmJyYW5jaCwgZW5hYmxlZDogdmFsdWVzLmVuYWJsZWQgfTtcclxuICAgICAgZm9yIChjb25zdCBmaWVsZCBvZiBbJ21pblN0b2NrTGV2ZWwnLCAnbWF4U3RvY2tMZXZlbCcsICdyZW9yZGVyTGV2ZWwnXSkge1xyXG4gICAgICAgIGlmICh2YWx1ZXNbZmllbGRdID09PSAnJyAmJiBzY29wZSA9PT0gJ3Byb2R1Y3QnKSB0aHJvdyBuZXcgRXJyb3IoJ1Byb2R1Y3QgdGhyZXNob2xkcyBtdXN0IGJlIGVudGVyZWQsIGluY2x1ZGluZyB6ZXJvIHdoZXJlIG5vIGxpbWl0IGlzIGNvbmZpZ3VyZWQuJyk7XHJcbiAgICAgICAgYm9keVtmaWVsZF0gPSB2YWx1ZXNbZmllbGRdID09PSAnJyA/IG51bGwgOiBOdW1iZXIodmFsdWVzW2ZpZWxkXSk7XHJcbiAgICAgIH1cclxuICAgICAgYXdhaXQgYXBpLmludlNhdmVBbGVydFRocmVzaG9sZHMocHJvZHVjdElkLCBib2R5KTtcclxuICAgICAgb25TYXZlZCgpOyBvbkNsb3NlKCk7XHJcbiAgICB9IGNhdGNoIChmYWlsdXJlKSB7IHNldEVycm9yKGZhaWx1cmUubWVzc2FnZSB8fCAnVW5hYmxlIHRvIHNhdmUgdGhyZXNob2xkcy4nKTsgfVxyXG4gICAgZmluYWxseSB7IHNldFNhdmluZyhmYWxzZSk7IGJ1c3kuY3VycmVudCA9IGZhbHNlOyB9XHJcbiAgfVxyXG4gIGNvbnN0IHByb2R1Y3RPcHRpb25zID0gcHJvZHVjdHMubWFwKChwcm9kdWN0KSA9PiAoeyB2YWx1ZTogcHJvZHVjdC5faWQsIGxhYmVsOiBgJHtwcm9kdWN0LmRlc2NyaXB0aW9ufSDCtyAke3Byb2R1Y3QuY29kZX1gIH0pKTtcclxuICBpZiAocHJvZHVjdElkICYmICFwcm9kdWN0T3B0aW9ucy5zb21lKChwcm9kdWN0KSA9PiBwcm9kdWN0LnZhbHVlID09PSBwcm9kdWN0SWQpKSBwcm9kdWN0T3B0aW9ucy51bnNoaWZ0KHsgdmFsdWU6IHByb2R1Y3RJZCwgbGFiZWw6IGNvbmZpZz8ucHJvZHVjdC5kZXNjcmlwdGlvbiB8fCBhbGVydD8uZGVzY3JpcHRpb24gfHwgJ1NlbGVjdGVkIHByb2R1Y3QnIH0pO1xyXG4gIHJldHVybiBjcmVhdGVQb3J0YWwoPGRpdiBjbGFzc05hbWU9XCJhc2EtdGhyZXNob2xkLW92ZXJsYXlcIiBvbkNsaWNrPXtjbG9zZX0+PHNlY3Rpb24gcmVmPXtyZWZ9IGNsYXNzTmFtZT1cImFzYS10aHJlc2hvbGQtZGlhbG9nXCIgcm9sZT1cImRpYWxvZ1wiIGFyaWEtbW9kYWw9XCJ0cnVlXCIgYXJpYS1sYWJlbGxlZGJ5PVwidGhyZXNob2xkLXRpdGxlXCIgb25DbGljaz17KGV2ZW50KSA9PiBldmVudC5zdG9wUHJvcGFnYXRpb24oKX0+XHJcbiAgICA8aGVhZGVyPjxoMiBpZD1cInRocmVzaG9sZC10aXRsZVwiPlN0b2NrIEFsZXJ0IFRocmVzaG9sZHM8L2gyPjxidXR0b24gdHlwZT1cImJ1dHRvblwiIGRpc2FibGVkPXtzYXZpbmd9IG9uQ2xpY2s9e2Nsb3NlfT5DbG9zZTwvYnV0dG9uPjwvaGVhZGVyPlxyXG4gICAgPGxhYmVsPkZpbmQgcHJvZHVjdDxpbnB1dCBhcmlhLWxhYmVsPVwiRmluZCB0aHJlc2hvbGQgcHJvZHVjdFwiIHBsYWNlaG9sZGVyPVwiUHJvZHVjdCBuYW1lLCBTS1Ugb3IgYmFyY29kZVwiIHZhbHVlPXtzZWFyY2h9IG9uQ2hhbmdlPXsoZXZlbnQpID0+IHNldFNlYXJjaChldmVudC50YXJnZXQudmFsdWUpfSAvPjwvbGFiZWw+XHJcbiAgICA8U2VsZWN0RHJvcGRvd24gYXJpYS1sYWJlbD1cIlRocmVzaG9sZCBwcm9kdWN0XCIgdmFsdWU9e3Byb2R1Y3RJZH0gb25DaGFuZ2U9e3NldFByb2R1Y3RJZH0gb3B0aW9ucz17cHJvZHVjdE9wdGlvbnN9IHBsYWNlaG9sZGVyPVwiU2VsZWN0IGFuIGludmVudG9yeSBwcm9kdWN0XCIgLz5cclxuICAgIHtlcnJvciAmJiA8cCByb2xlPVwiYWxlcnRcIiBjbGFzc05hbWU9XCJhc2EtY29uZmlnLWVycm9yXCI+e2Vycm9yfTwvcD59XHJcbiAgICB7bG9hZGluZyA/IDxwIHJvbGU9XCJzdGF0dXNcIj5Mb2FkaW5nIHNhdmVkIHRocmVzaG9sZHPigKY8L3A+IDogY29uZmlnICYmIDxmb3JtIG9uU3VibWl0PXtzYXZlfT5cclxuICAgICAgPGxhYmVsPlRocmVzaG9sZCBzY29wZTxTZWxlY3REcm9wZG93biB2YWx1ZT17c2NvcGV9IG9uQ2hhbmdlPXsodmFsdWUpID0+IGNob29zZSh2YWx1ZSwgbG9jYXRpb24pfSBvcHRpb25zPXtbLi4uKGNvbmZpZy5jYW5FZGl0UHJvZHVjdCA/IFt7IHZhbHVlOiAncHJvZHVjdCcsIGxhYmVsOiAnUHJvZHVjdCBkZWZhdWx0cycgfV0gOiBbXSksIHsgdmFsdWU6ICd3YXJlaG91c2UnLCBsYWJlbDogJ1dhcmVob3VzZSBvdmVycmlkZScgfV19IC8+PC9sYWJlbD5cclxuICAgICAge3Njb3BlID09PSAnd2FyZWhvdXNlJyAmJiA8bGFiZWw+V2FyZWhvdXNlIC8gQnJhbmNoPFNlbGVjdERyb3Bkb3duIHZhbHVlPXtsb2NhdGlvbn0gb25DaGFuZ2U9eyh2YWx1ZSkgPT4gY2hvb3NlKHNjb3BlLCB2YWx1ZSl9IG9wdGlvbnM9e2NvbmZpZy53YXJlaG91c2VzLm1hcCgod2FyZWhvdXNlKSA9PiAoeyB2YWx1ZTogSlNPTi5zdHJpbmdpZnkod2FyZWhvdXNlKSwgbGFiZWw6IGAke3dhcmVob3VzZS5uYW1lfSDCtyAke3dhcmVob3VzZS5icmFuY2ggfHwgJ05vIGJyYW5jaCd9YCB9KSl9IHBsYWNlaG9sZGVyPVwiU2VsZWN0IGEgd2FyZWhvdXNlXCIgLz48L2xhYmVsPn1cclxuICAgICAge1snbWluU3RvY2tMZXZlbCcsICdtYXhTdG9ja0xldmVsJywgJ3Jlb3JkZXJMZXZlbCddLm1hcCgoZmllbGQpID0+IDxsYWJlbCBrZXk9e2ZpZWxkfT57ZmllbGQgPT09ICdtaW5TdG9ja0xldmVsJyA/ICdNaW5pbXVtIFN0b2NrJyA6IGZpZWxkID09PSAnbWF4U3RvY2tMZXZlbCcgPyAnTWF4aW11bSBTdG9jaycgOiAnUmVvcmRlciBQb2ludCd9PGlucHV0IGFyaWEtbGFiZWw9e2ZpZWxkfSB0eXBlPVwibnVtYmVyXCIgbWluPVwiMFwiIHN0ZXA9XCJhbnlcIiB2YWx1ZT17dmFsdWVzW2ZpZWxkXX0gcGxhY2Vob2xkZXI9e3Njb3BlID09PSAnd2FyZWhvdXNlJyA/IGBJbmhlcml0IHByb2R1Y3QgZGVmYXVsdCAoJHtjb25maWcucHJvZHVjdFtmaWVsZF19KWAgOiAnJ30gb25DaGFuZ2U9eyhldmVudCkgPT4gc2V0VmFsdWVzKChwcmV2aW91cykgPT4gKHsgLi4ucHJldmlvdXMsIFtmaWVsZF06IGV2ZW50LnRhcmdldC52YWx1ZSB9KSl9IC8+PC9sYWJlbD4pfVxyXG4gICAgICA8bGFiZWwgY2xhc3NOYW1lPVwiYXNhLWVuYWJsZWRcIj48aW5wdXQgdHlwZT1cImNoZWNrYm94XCIgY2hlY2tlZD17dmFsdWVzLmVuYWJsZWR9IG9uQ2hhbmdlPXsoZXZlbnQpID0+IHNldFZhbHVlcygocHJldmlvdXMpID0+ICh7IC4uLnByZXZpb3VzLCBlbmFibGVkOiBldmVudC50YXJnZXQuY2hlY2tlZCB9KSl9IC8+RW5hYmxlIGFsZXJ0cyBmb3IgdGhpcyBzY29wZTwvbGFiZWw+XHJcbiAgICAgIDxwPldhcmVob3VzZSBibGFua3MgaW5oZXJpdCBwcm9kdWN0IGRlZmF1bHRzLiBNYXhpbXVtIDAgbWVhbnMgbm8gdXBwZXIgbGltaXQuIFJlb3JkZXIgUG9pbnQgMCBpbiBwcm9kdWN0IGRlZmF1bHRzIHVzZXMgTWluaW11bSBTdG9jay4gU3VnZ2VzdGVkIHF1YW50aXR5IHRvcHMgdXAgYXZhaWxhYmxlIHN0b2NrIHRvIE1heGltdW0sIG9yIE1pbmltdW0gaWYgbm8gTWF4aW11bSBpcyBjb25maWd1cmVkLiBObyBxdWFudGl0eSBpcyBpbnZlbnRlZCB3aGVuIG5vIHRhcmdldCBpcyBzZXQuPC9wPlxyXG4gICAgICB7IWNvbmZpZy5wcm9kdWN0LnN0b2NrQWxlcnRzRW5hYmxlZCAmJiBzY29wZSA9PT0gJ3dhcmVob3VzZScgJiYgPHA+UHJvZHVjdCBhbGVydHMgYXJlIGRpc2FibGVkIGdsb2JhbGx5OyBhbiBvd25lciBtdXN0IGVuYWJsZSB0aGVtIGJlZm9yZSB3YXJlaG91c2UgYWxlcnRzIGNhbiBhcHBlYXIuPC9wPn1cclxuICAgICAgPGJ1dHRvbiB0eXBlPVwic3VibWl0XCIgZGlzYWJsZWQ9e3NhdmluZyB8fCAhcHJvZHVjdElkIHx8IChzY29wZSA9PT0gJ3dhcmVob3VzZScgJiYgIWxvY2F0aW9uKX0+e3NhdmluZyA/ICdTYXZpbmfigKYnIDogJ1NhdmUgVGhyZXNob2xkcyd9PC9idXR0b24+XHJcbiAgICA8L2Zvcm0+fVxyXG4gIDwvc2VjdGlvbj48L2Rpdj4sIGRvY3VtZW50LmJvZHkpO1xyXG59XHJcbiJdfQ==

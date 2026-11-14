@@ -1,0 +1,1 @@
+function e(e=`/`){let t=String(e||`/`).trim();return!t||t===`#`?`/dashboard`:t.startsWith(`#/`)?t.slice(1):t.startsWith(`#`)?`/${t.slice(1)}`:t.startsWith(`/`)?t:`/${t}`}function t(t,{replace:n=!1}={}){let r=e(t);n?window.location.replace(r):window.location.assign(r)}function n(t,n,r){t(e(n),r)}export{t as n,n as r,e as t};

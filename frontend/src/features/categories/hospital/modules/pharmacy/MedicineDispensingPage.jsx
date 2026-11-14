@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -14,6 +14,7 @@ import {
 
 import { api } from '../../../../../services/api.js';
 import { useModuleRecords } from '../../../shared/recordUi/useModuleRecords.js';
+import { productInventoryOptions } from '../../../../../../../backend/src/utils/productVariants.js';
 import { todayISO } from '../../../shared/recordUi/dateUtils.js';
 
 const INPUT = 'h-10 w-full rounded-md border border-[#dbe4ef] bg-white px-3 text-[13px] font-[inherit] text-[#111827] outline-none focus:border-blue-500';
@@ -60,7 +61,8 @@ function normalizeMedicines(data = {}) {
 function normalizeStockRecord(record) {
   const data = record.data || record;
   return {
-    id: record._id || data.id,
+    id: record.optionId || record._id || data.id,
+    productId: record.productId || record._id, variantId: record.variantId,
     source: record.data ? 'pharmacy-stock' : 'inventory',
     raw: data.raw || data,
     medicineName: data.medicineName || data.description || data.name || data.productName || 'Medicine',
@@ -124,6 +126,7 @@ function StatusPill({ children, tone = 'slate' }) {
 }
 
 export function MedicineDispensingPage() {
+  const stockPostingKey = useRef(crypto.randomUUID());
   const prescriptions = useModuleRecords('hospital/prescription');
   const dispensing = useModuleRecords('hospital/pharmacy-dispensing');
   const pharmacyStock = useModuleRecords('hospital/pharmacy-stock');
@@ -137,17 +140,18 @@ export function MedicineDispensingPage() {
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    api.invListProducts({ page: 1, limit: 500, itemType: 'Product' })
-      .then((res) => {
-        const rows = Array.isArray(res) ? res : res.data || res.records || res.items || [];
-        setInventoryStock(rows.map(normalizeStockRecord));
-      })
-      .catch((err) => {
-        setInventoryStock([]);
-        setStockError(err.message || 'Inventory products could not be loaded.');
-      });
+  const reloadInventoryStock = useCallback(async () => {
+    try {
+      const res = await api.invListProducts({ page: 1, limit: 500, itemType: 'Product' });
+      const rows = Array.isArray(res) ? res : res.data || res.records || res.items || [];
+      setInventoryStock(rows.flatMap(productInventoryOptions).map(normalizeStockRecord));
+      setStockError('');
+    } catch (error) {
+      setInventoryStock([]);
+      setStockError(error.message || 'Inventory products could not be loaded.');
+    }
   }, []);
+  useEffect(() => { void reloadInventoryStock(); }, [reloadInventoryStock]);
 
   const prescriptionRecords = prescriptions.records;
   const filteredPrescriptions = useMemo(() => {
@@ -190,9 +194,12 @@ export function MedicineDispensingPage() {
       };
     });
     setLines(nextLines);
-    setNotes('');
-    setMessage('');
   }, [selected, stockBatches]);
+
+  useEffect(() => {
+    stockPostingKey.current = crypto.randomUUID();
+    setNotes(''); setMessage('');
+  }, [selected?._id]);
 
   const selectedAllergy = selectedData.allergy || selectedData.knownAllergies || '';
   const allergyConflicts = useMemo(() => {
@@ -212,30 +219,22 @@ export function MedicineDispensingPage() {
   const isPartial = totalDispense < totalRequired;
 
   function updateLine(key, patch) {
+    stockPostingKey.current = crypto.randomUUID();
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
   }
 
-  async function deductBatch(batch, qty) {
-    if (!batch) return;
-    const nextQuantity = Math.max(0, Number(batch.quantity || 0) - Number(qty || 0));
-    if (batch.source === 'pharmacy-stock') {
-      await pharmacyStock.update(batch.id, { ...batch.raw, quantity: nextQuantity, status: nextQuantity <= 0 ? 'Out of Stock' : nextQuantity <= 10 ? 'Low' : 'Available' });
-    } else {
-      await api.invUpdateProduct(batch.id, { ...batch.raw, stock: nextQuantity });
-    }
-  }
-
   async function submitDispense(partialRequested) {
-    if (!canDispense) {
+    if (!canDispense || totalDispense <= 0) {
       window.alert('Resolve stock, expiry, quantity, and allergy checks before dispensing.');
       return;
     }
     setSaving(true);
     try {
       const status = partialRequested || isPartial ? 'PARTIALLY DISPENSED' : 'DISPENSED';
-      const dispensedItems = lines.map((line) => {
+      const dispensedItems = lines.filter(line => Number(line.dispense) > 0).map((line) => {
         const batch = line.batches.find((item) => item.id === line.batchId);
         return {
+          stockId: batch.source === 'pharmacy-stock' ? batch.id : batch.productId || batch.id, stockSource: batch.source, variantId: batch.variantId || batch.raw?.variantId,
           medicine: line.medicine,
           required: line.required,
           dispensed: Number(line.dispense || 0),
@@ -248,6 +247,7 @@ export function MedicineDispensingPage() {
       });
 
       await dispensing.create({
+        inventoryPosting: { version: 1, key: stockPostingKey.current },
         name: `${rxLabel(selectedData)} - ${selectedData.patientName || 'Patient'}`,
         rxId: rxLabel(selectedData),
         prescriptionId: selected?._id,
@@ -265,7 +265,6 @@ export function MedicineDispensingPage() {
           : 'Prescription -> Verification -> Stock Check -> Batch Selection -> Quantity Verification -> Pharmacy Billing -> Payment -> Dispense -> Inventory Deduction',
       });
 
-      await Promise.all(lines.map((line) => deductBatch(line.batches.find((item) => item.id === line.batchId), line.dispense)));
 
       if (selected) {
         await prescriptions.update(selected._id, {
@@ -277,8 +276,9 @@ export function MedicineDispensingPage() {
       }
 
       setMessage(`${rxLabel(selectedData)} marked as ${status.toLowerCase()}. Inventory deducted by selected FEFO batches.`);
-      pharmacyStock.reload();
-      dispensing.reload();
+      await Promise.all([pharmacyStock.reload(), dispensing.reload(), reloadInventoryStock()]);
+    } catch (error) {
+      window.alert(error.message || 'Dispensing could not be saved.');
     } finally {
       setSaving(false);
     }
@@ -359,7 +359,7 @@ export function MedicineDispensingPage() {
                           {!line.batches.length && <option value="">No stock</option>}
                           {line.batches.map((item, index) => (
                             <option key={item.id} value={item.id}>
-                              {item.batchNumber} - {item.quantity} qty{index === 0 ? ' - FEFO' : ''}
+                              {item.medicineName} - {item.batchNumber} - {item.quantity} qty{index === 0 ? ' - FEFO' : ''}
                             </option>
                           ))}
                         </select>

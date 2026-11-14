@@ -1,4 +1,6 @@
-import { HotelDashboardPage } from './HotelDashboardPage.jsx';
+import { lazyPage } from '../../../../../routes/lazyPage.jsx';
+
+const HotelDashboardPage = lazyPage(() => import('./HotelDashboardPage.jsx'), 'HotelDashboardPage');
 
 const dashboard = <HotelDashboardPage />;
 

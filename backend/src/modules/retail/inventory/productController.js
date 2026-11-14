@@ -11,6 +11,9 @@ import { Invoice } from '../../../models/Invoice.js';
 import { httpError } from '../../../utils/httpError.js';
 import { branchForNewRecord, branchScopedQuery } from '../../../utils/branchScope.js';
 import { inventoryTransaction } from '../../../services/inventoryTransaction.js';
+import { hasNewDuplicateVariants, productVariantKey, productHasVariants, singleProductVariants } from '../../../utils/productVariants.js';
+import { assertUnreservedInventory } from '../../../services/inventoryReservations.js';
+import { AuditLog } from '../../../models/AuditLog.js';
 
 export const uploadProductsFile = multer({
   storage: multer.memoryStorage(),
@@ -274,6 +277,7 @@ function normalizeProductPayload(body = {}) {
     payload.itemType = type === 'service' ? 'Service' : 'Product';
   }
   if ('productType' in body) payload.productType = cleanText(body.productType) || 'Standard';
+  if ('variantMode' in body) payload.variantMode = cleanText(body.variantMode);
   if ('serviceType' in body) payload.serviceType = cleanText(body.serviceType);
   if ('estimatedTime' in body) payload.estimatedTime = cleanText(body.estimatedTime);
   if ('technician' in body) payload.technician = cleanText(body.technician);
@@ -464,7 +468,7 @@ function normalizeProductPayload(body = {}) {
         const size = String(v?.size ?? '').trim();
         const modelName = String(v?.modelName ?? v?.model ?? '').trim();
         const variantPayload = {
-          ...(v?._id && /^[a-f\d]{24}$/i.test(String(v._id)) ? { _id: v._id } : {}),
+          ...(v?._id && /^[a-f\d]{24}$/i.test(String(v._id)) ? { _id: String(v._id) } : {}),
           size,
           modelName,
           modelCode: cleanText(v?.modelCode),
@@ -519,7 +523,8 @@ function normalizeProductPayload(body = {}) {
   return payload;
 }
 
-function validateProductPayload(payload, { partial = false } = {}) {
+function validateProductPayload(payload, { partial = false, existingVariants = [] } = {}) {
+  if ('variantMode' in payload && !['', 'single', 'variants'].includes(payload.variantMode)) return 'Select Single Product or Product with Variants';
   if (!partial || 'description' in payload) {
     if (!payload.description) return 'Product name is required';
   }
@@ -541,17 +546,14 @@ function validateProductPayload(payload, { partial = false } = {}) {
   }
 
   if ('variants' in payload && payload.variants.length) {
-    const seen = new Set();
     for (const v of payload.variants) {
       const label = v.size || v.modelName || v.modelCode;
       if (!label) return 'Each model row needs a model or size name';
       if (!Number.isFinite(v.stock) || v.stock < 0) return `Stock for "${label}" must be 0 or more`;
       if (!Number.isFinite(v.minStockLevel) || v.minStockLevel < 0) return `Min stock level for "${label}" must be 0 or more`;
       if (!Number.isFinite(v.rate) || v.rate < 0) return `Sale price for "${label}" must be 0 or more`;
-      const key = `${String(v.size || '').trim().toLowerCase()}|${String(v.modelName || '').trim().toLowerCase()}|${String(v.modelCode || '').trim().toLowerCase()}`;
-      if (seen.has(key)) return `Duplicate model "${label}"`;
-      seen.add(key);
     }
+    if (hasNewDuplicateVariants(payload.variants, existingVariants)) return 'Duplicate model or variant. Keep each model and its attributes unique.';
   }
 
   if ('gstRate' in payload && ![0, 5, 12, 18, 28].includes(payload.gstRate)) {
@@ -645,32 +647,30 @@ async function createProductStockMovement(userId, product, qtyDiff, reason = 'St
   }
 }
 
-// Stock is only ever set as Opening Stock at product creation. After that,
-// quantity must flow through a proper movement — Purchase Entry (inbound)
-// or Stock In/Stock Out (manual corrections) — never a silent edit on the
-// product record itself, so this strips any stock the client tried to slip
-// into a product update and preserves the existing per-variant quantities.
+// Metadata saves preserve current quantities. Explicit stock edits retain
+// variant IDs and record their differences as movements in the transaction.
 function variantIdentity(variant = {}) {
-  return [variant.size, variant.modelName, variant.modelCode, variant.barcode]
-    .map((value) => cleanText(value).toLowerCase())
-    .join('|');
+  return productVariantKey(variant);
 }
 
-function stripStockFromUpdatePayload(payload, existingProduct) {
-  delete payload.stock;
+function stripStockFromUpdatePayload(payload, existingProduct, adjustStock = false) {
+  if (!adjustStock) delete payload.stock;
   delete payload.openingStockValue;
   if (!Array.isArray(payload.variants)) return payload;
 
   const oldVariants = existingProduct.variants || [];
   const retained = new Set();
   payload.variants = payload.variants.map((variant) => {
-    const previous = oldVariants.find((row) => variant._id && String(row._id) === String(variant._id))
-      || oldVariants.find((row) => variantIdentity(row) === variantIdentity(variant));
+    const matches = variant._id
+      ? oldVariants.filter((row) => String(row._id) === String(variant._id))
+      : oldVariants.filter((row) => variantIdentity(row) === variantIdentity(variant));
+    if ((variant._id && !matches.length) || matches.length > 1) throw httpError(409, 'Product variants changed. Refresh the product before editing.');
+    const previous = matches[0];
     if (previous?._id) retained.add(String(previous._id));
     return {
       ...variant,
       ...(previous?._id ? { _id: previous._id } : {}),
-      stock: previous ? Number(previous.stock) || 0 : 0,
+      stock: adjustStock ? variant.stock : previous ? Number(previous.stock) || 0 : 0,
     };
   });
 
@@ -679,6 +679,42 @@ function stripStockFromUpdatePayload(payload, existingProduct) {
     throw httpError(409, `Cannot remove variant "${variantIdentity(removedStockVariant) || removedStockVariant._id}" while it has stock. Adjust its stock first.`);
   }
   return payload;
+}
+
+// A deliberate quantity edit carries the balance that the editor originally
+// loaded. Metadata-only saves continue to ignore client stock, including saves
+// from older clients. The transaction makes the comparison and movement atomic.
+function assertStockEditBaseline(baseline, product) {
+  const stale = () => { throw httpError(409, 'Stock changed since you opened this product. Refresh and enter the quantity again.'); };
+  if (!baseline || typeof baseline.expectedStock !== 'number' || !Number.isFinite(baseline.expectedStock)
+    || baseline.expectedStock !== Number(product.stock || 0) || !Array.isArray(baseline.expectedVariants)) stale();
+  if (baseline.expectedVariants.some(row => !row?._id || typeof row.stock !== 'number' || !Number.isFinite(row.stock))) stale();
+  const expected = new Map(baseline.expectedVariants.map(row => [String(row._id), row.stock]));
+  if (expected.size !== baseline.expectedVariants.length || expected.size !== (product.variants || []).length) stale();
+  for (const row of product.variants || []) {
+    if (expected.get(String(row._id)) !== Number(row.stock || 0)) stale();
+  }
+}
+
+async function recordProductStockEdit(req, before, after) {
+  await assertUnreservedInventory(after, 0);
+  for (const variant of after.variants || []) await assertUnreservedInventory(after, 0, variant._id, { variantQuantity: 0 });
+  if (after.variants?.length) {
+    for (const variant of after.variants) {
+      const previous = before.variants?.find(row => String(row._id) === String(variant._id));
+      await createProductStockMovement(req.user.id, { ...after, _openingVariant: variant },
+        Number(variant.stock || 0) - Number(previous?.stock || 0));
+    }
+  } else {
+    await createProductStockMovement(req.user.id, after, Number(after.stock || 0) - Number(before.stock || 0));
+  }
+  await AuditLog.create({
+    action: 'update', modelName: 'Product', documentId: after._id, documentLabel: after.description,
+    performedBy: { userId: req.user.actorId || req.user.id, email: req.user.email || '' },
+    meta: { reason: 'Product stock edited', targetUserId: req.user.id,
+      before: { stock: before.stock, variants: (before.variants || []).map(({ _id, stock }) => ({ _id, stock })) },
+      after: { stock: after.stock, variants: (after.variants || []).map(({ _id, stock }) => ({ _id, stock })) } },
+  });
 }
 
 async function ensureProductBrandsFromPayload(userId, payload = {}) {
@@ -1339,15 +1375,34 @@ export async function updateProduct(req, res, next) {
   try {
     const userId = req.user.id;
     const requestedPayload = normalizeProductPayload(req.body);
-    const validationError = validateProductPayload(requestedPayload, { partial: true });
-    if (validationError) return next(httpError(400, validationError));
-
     const product = await inventoryTransaction(async () => {
       const filter = await branchScopedQuery(req, { model: Product, ownerField: 'userId' }, { _id: req.params.id });
       const old = await Product.findOne(filter).lean();
       if (!old) throw httpError(404, 'Product not found');
       const payload = structuredClone(requestedPayload);
-      stripStockFromUpdatePayload(payload, old);
+      const adjustStock = Object.prototype.hasOwnProperty.call(req.body, 'stockAdjustment');
+      if (payload.variantMode === 'single' && old.variants?.length) {
+        if (productHasVariants(old)) throw httpError(400, 'This product has distinct variants. Edit their respective quantities in the variant editor.');
+        if (adjustStock && (!Number.isFinite(Number(req.body.stock)) || Number(req.body.stock) < 0)) throw httpError(400, 'Stock must be 0 or more');
+        // The single form hides import-generated rows, but never deletes IDs
+        // referenced by old bills or trusts client replacements for those rows.
+        payload.variants = singleProductVariants(old, adjustStock ? Number(req.body.stock) : old.stock)
+          .map(row => ({ ...row, _id: String(row._id), ...Object.fromEntries(
+            ['rate', 'purchasePrice', 'mrp', 'minStockLevel'].filter(key => Object.prototype.hasOwnProperty.call(payload, key)).map(key => [key, payload[key]]),
+          ) }));
+        if (adjustStock) payload.stock = Number(req.body.stock);
+      }
+      const validationError = validateProductPayload(payload, { partial: true, existingVariants: old.variants || [] });
+      if (validationError) throw httpError(400, validationError);
+      if (adjustStock) {
+        assertStockEditBaseline(req.body.stockAdjustment, old);
+        if ((payload.itemType || old.itemType) === 'Service' || (payload.productType || old.productType) === 'Bundle') {
+          throw httpError(400, 'Services and bundles do not have editable stock');
+        }
+        if (!Object.prototype.hasOwnProperty.call(payload, 'stock')) throw httpError(400, 'Enter the new stock quantity');
+        if (old.variants?.length && !payload.variants?.length) throw httpError(400, 'Edit stock for each existing variant');
+      }
+      stripStockFromUpdatePayload(payload, old, adjustStock);
       if (Array.isArray(payload.variants)) {
         payload.variants = payload.variants.map((variant) => {
           const previous = old.variants?.find((row) => String(row._id) === String(variant._id));
@@ -1370,6 +1425,7 @@ export async function updateProduct(req, res, next) {
         { $set: { ...payload, branch } },
         { new: true, runValidators: true },
       ).lean();
+      if (updated && adjustStock) await recordProductStockEdit(req, old, updated);
       if (updated) await ensureProductBrandsFromPayload(userId, updated);
       return updated;
     });

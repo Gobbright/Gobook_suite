@@ -1,0 +1,61 @@
+  const totalPages = Math.max(1, Math.ceil(data.total / applied.limit));
+  const pageNumbers = Array.from({ length: Math.min(5, totalPages) }, (_, index) => Math.max(1, Math.min(applied.page - 2, totalPages - 4)) + index);
+  const renderValue = (key, row) => {
+    if (key === 'invoiceNumber') return <a href={`/billing/invoice/${row.invoiceId}/view`}>{row.invoiceNumber}</a>;
+    if (key === 'invoiceDate') return formatReportDate(row.invoiceDate);
+    if (['name', 'customer', 'product'].includes(key)) return row[key];
+    return ['invoices', 'quantity'].includes(key) ? Number(row[key] || 0).toLocaleString('en-IN') : money(row[key]);
+  };
+  return <main className="dsr-page dsr-reference" aria-busy={loading}>
+    <nav className="dsr-breadcrumb" aria-label="Breadcrumb"><a href="/reports">Reports</a><ChevronRight size={14} /><a href="/sales-reports">Sales Reports</a><ChevronRight size={14} /><strong>Sales Report</strong></nav>
+    <header className="dsr-header">
+      <div className="dsr-heading"><span className="dsr-heading-icon"><BarChart3 size={28} strokeWidth={2.6} /></span><div><h1>Sales Report</h1><p>View and analyze your sales transactions with flexible filters.</p></div></div>
+      <div className="dsr-header-actions">
+        <div className="dsr-save-buttons"><button type="button" onClick={() => filterControls.current?.openSave()}><Star size={19} />Save Filter</button><button type="button" aria-label="Saved Filters" title="Saved Filters" onClick={() => filterControls.current?.openSaved()}><ChevronDown size={14} /></button></div>
+        <div className="dsr-export" ref={exportMenu}><button type="button" aria-haspopup="menu" aria-expanded={exportOpen} disabled={loading || !!error || !data.total || !!exporting} onClick={() => setExportOpen(previous => !previous)}>{exporting && exporting !== 'print' ? <LoaderCircle className="drf-spin" size={18} /> : <Download size={19} />}Export<ChevronDown size={14} /></button>
+          {exportOpen && <div className="dsr-export-menu" role="menu"><button type="button" role="menuitem" onClick={() => exportReport('csv')}><Download size={16} />CSV</button><button type="button" role="menuitem" onClick={() => exportReport('pdf')}><FileText size={16} />PDF</button></div>}
+        </div>
+        <button type="button" className="dsr-print" disabled={loading || !!error || !data.total || !!exporting} onClick={() => exportReport('print')}>{exporting === 'print' ? <LoaderCircle className="drf-spin" size={18} /> : <Printer size={19} />}Print</button>
+      </div>
+    </header>
+
+    <section className="dsr-filter-card" aria-label="Sales report filters">
+      <DynamicFilterSearch variant="reference" controlsRef={filterControls} fields={fields} value={draft} onChange={setDraft} onApply={filters => {
+        const invalidDate = filters.conditions.find(condition => condition.field === 'date' && condition.operator === 'between' && (!condition.min || !condition.max || condition.min > condition.max));
+        if (invalidDate) { setNotice('Choose a valid From Date and To Date before applying.'); return; }
+        apply(filters);
+      }} loadOptions={loadOptions} loading={loading} disabled={!fields.length} savedStorageKey={savedKey} />
+    </section>
+    <div className="dsr-date-bar">
+      <button type="button" className={`dsr-options-trigger${optionsOpen ? ' active' : ''}`} aria-expanded={optionsOpen} onClick={() => setOptionsOpen(previous => !previous)}><Settings2 size={16} />Report options<ChevronDown size={13} /></button>
+      <div className="dsr-date-presets">{datePresets.filter(([key]) => key !== 'custom').map(([key, label]) => <button type="button" key={key} className={dateCondition?.preset === key ? 'active' : ''} onClick={() => { changeDate(key); setCustomOpen(false); }}>{label}</button>)}<button type="button" className={`dsr-custom-trigger${customOpen || dateCondition?.preset === 'custom' ? ' active' : ''}`} aria-expanded={customOpen} onClick={() => setCustomOpen(previous => !previous)}><CalendarDays size={17} />Custom Range<ChevronDown size={13} /></button></div>
+      {customOpen && <div className="dsr-custom-dates"><label>From Date<input id="dsr-date-from" aria-label="Report from date" type="date" value={dateCondition?.min || ''} max={dateCondition?.max || undefined} onChange={event => customDate('min', event.target.value)} /></label><span>—</span><label>To Date<input aria-label="Report to date" type="date" value={dateCondition?.max || ''} min={dateCondition?.min || undefined} onChange={event => customDate('max', event.target.value)} /></label><button type="button" onClick={() => setCustomOpen(false)}>Done</button></div>}
+    </div>
+    {optionsOpen && <section className="dsr-report-options" aria-label="Report options">
+      <label>View<select aria-label="Sales report breakdown" value={applied.analysis} onChange={event => changeView({ analysis: event.target.value })}>{breakdowns.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label>Match<select aria-label="Combine filter conditions" value={draft.logic} onChange={event => setDraft(previous => ({ ...previous, logic: event.target.value }))}><option value="and">All conditions (AND)</option><option value="or">Any condition (OR)</option></select></label>
+      {applied.analysis === 'margin' && <label>Margin by<select aria-label="Margin breakdown" value={applied.marginBy} onChange={event => changeView({ marginBy: event.target.value })}>{['product', 'invoice', 'customer', 'branch'].map(value => <option key={value} value={value}>{value}</option>)}</select></label>}
+      <label>Show<select aria-label="Sales report metric" value={applied.metric} onChange={event => changeView({ metric: event.target.value })}>{[['sales', 'All Sales'], ['discounts', 'Discounted Sales'], ['profitability', 'Sales with Recorded Cost'], ['below-cost', 'Below-Cost Sales']].map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+      <button type="button" aria-label="Refresh report" disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={15} />Refresh</button>
+      {industry && onIndustryReports && <button type="button" onClick={onIndustryReports}>Industry reports</button>}
+    </section>}
+    {dirty && <p className="dsr-pending"><Filter size={13} />Filters changed. Select Apply to update the report.</p>}
+    {(configError || notice) && <p className="dsr-error" role="alert">{configError || notice}</p>}
+
+    <section className="dsr-results" aria-label="Sales transactions">
+      {error ? <div className="dsr-empty" role="alert"><strong>Could not load this report</strong><p>{error}</p><button type="button" onClick={() => setRefresh(value => value + 1)}>Try again</button></div> : <div className="dsr-table-scroll"><table><thead><tr>{columns.map(([key], index) => <th key={key} className={index >= (applied.analysis === 'transactions' ? 4 : 1) ? 'dsr-number' : ''} aria-sort={applied.sort === key ? applied.direction === 'asc' ? 'ascending' : 'descending' : 'none'}><button type="button" aria-label={`Sort by ${headings[index]}`} onClick={() => changeView({ sort: key, direction: applied.sort === key && applied.direction === 'desc' ? 'asc' : 'desc' })}>{headings[index]}{applied.sort === key && (applied.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}</button></th>)}</tr></thead><tbody>
+        {loading ? <tr><td colSpan={columns.length}><div className="dsr-empty" role="status"><LoaderCircle className="drf-spin" size={24} /><p>Loading filtered sales…</p></div></td></tr> : data.data.length ? data.data.map(row => <tr key={row.id || row.name}>{columns.map(([key], index) => <td key={key} className={index >= (applied.analysis === 'transactions' ? 4 : 1) ? 'dsr-number' : ''}>{renderValue(key, row)}</td>)}</tr>) : <tr><td colSpan={columns.length}><div className="dsr-empty"><Filter size={26} strokeWidth={1.5} /><strong>No sales match your filters</strong><p>Try a wider date range, remove a condition, or clear all filters and apply again.</p></div></td></tr>}
+      </tbody></table></div>}
+    </section>
+
+    <section className="dsr-metrics" aria-label="Filtered sales totals">{[
+      ['Total Invoices', data.recordCount, FileText, 'invoices', false],
+      ['Total Quantity', data.totals.quantity, Package, 'quantity', false],
+      ['Subtotal', data.totals.sales, IndianRupee, 'subtotal', true],
+      ['Total GST', data.totals.tax, Tag, 'gst', true],
+      ['Net Sales', data.totals.netAmount, Coins, 'net', true],
+    ].map(([label, value, Icon, key, currency]) => <article key={key} className={`dsr-summary-${key}`}><span className="dsr-metric-icon"><Icon size={25} strokeWidth={1.7} /></span><div><span>{label}</span><strong>{loading ? '—' : currency ? money(value) : Number(value || 0).toLocaleString('en-IN')}</strong></div></article>)}</section>
+
+    <footer className="dsr-pagination"><span>{data.total ? `Showing ${(applied.page - 1) * applied.limit + 1} to ${Math.min(applied.page * applied.limit, data.total)} of ${data.total} entries` : 'Showing 0 entries'}</span><label className="dsr-page-size">Rows<select aria-label="Report page size" value={applied.limit} onChange={event => changeView({ limit: Number(event.target.value) })}>{[25, 50, 100].map(value => <option key={value} value={value}>{value}</option>)}</select></label><div className="dsr-page-buttons"><button type="button" aria-label="Previous report page" disabled={loading || applied.page <= 1} onClick={() => setApplied(previous => ({ ...previous, page: previous.page - 1 }))}><ChevronLeft size={17} /></button>{pageNumbers.map(page => <button key={page} type="button" className={applied.page === page ? 'active' : ''} aria-label={`Report page ${page}`} aria-current={applied.page === page ? 'page' : undefined} disabled={loading} onClick={() => setApplied(previous => ({ ...previous, page }))}>{page}</button>)}<button type="button" aria-label="Next report page" disabled={loading || applied.page >= totalPages} onClick={() => setApplied(previous => ({ ...previous, page: previous.page + 1 }))}><ChevronRight size={17} /></button></div></footer>
+  </main>;
+}

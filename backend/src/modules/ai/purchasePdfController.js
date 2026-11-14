@@ -11,6 +11,7 @@ Find the supplier, not the buyer. Keep invoice number distinct from purchase ord
 Handle any layout, language, rotated headings, wrapped descriptions, continuation pages and merged parent product cells. Expand grouped variants into one item per purchasable variant, inheriting only that parent's description/brand/category/material/HSN. Category and Brand labels inside a merged product cell are metadata, never new product names or group boundaries. Use merged serial-number cells to identify parent groups. Do not create a row for the parent heading or totals. Do not merge repeated purchased rows.
 productType is Standard for an individual product and Matrix for explicitly grouped selectable variants. An individual product may have fixed specifications; RAM, storage, colour or material alone do not make it a matrix product. Extract explicit model/size, length, colour, fit(type), material, RAM, storage, processor, display/screen, graphics, operating system, pattern, quality, age group and other specifications into their fields AND preserve the full original specifications in itemDescription. Never collapse different RAM/storage options of the same colour into one variant. Do not invent variants or infer size/colour from a vague product name. Keep full product names and specifications when no explicit attribute exists.
 Qty is purchased quantity, rate is per-unit PURCHASE price before GST, not MRP, line total, tax amount or selling price. discountType is percent or amount (amount means entire line discount). Discount defaults to 0 only when absent. GST is combined CGST+SGST or IGST percentage, never a tax amount. Unknown GST is null, not zero. Use 0 only for explicitly exempt/zero-rated lines. Use document-wide GST only if it clearly applies to every item.
+Read every Qty cell explicitly, including right-aligned numbers, decimal quantities, "12 Nos" and wrapped headings. Return the number in qty and its printed unit in unit. Do not confuse Qty with adjacent HSN/SKU, Free Qty, pack size, Rate or Amount columns. Never default a missing quantity to 1, calculate it from amount/rate, or add free units to billed quantity. Preserve the printed billed/purchased quantity; flag distinct free-unit treatment for review.
 sourceAmount is printed item total (not invoice total). sourcePage is the original page number on which the purchased line starts. Include pageCounts for EVERY supplied page, including count 0 for pages with no purchased rows; count expanded purchasable variants, not merged parent headings. Every item must have sourcePage matching one supplied page and each page count must equal its extracted item count. Additional freight/packing etc go in charges. Exclude summary/tax/rounding rows from items. Preserve uncertainty in warnings and each item's uncertainFields array (field names); never guess missing numbers. Include uncertainFields for unreadable or ambiguous names, parent groups, attributes or numbers. Only extract rows on supplied pages; context is for interpreting continuation rows, never extra rows. Return JSON only.`;
 
 async function requestAnalysis(messages, model) {
@@ -29,12 +30,12 @@ async function requestAnalysis(messages, model) {
 }
 
 export function purchasePdfCapabilities(_req, res) {
-  res.json({ enabled: Boolean(env.groqApiKey) });
+  res.json({ enabled: Boolean(env.groqApiKey?.trim()) });
 }
 
 export async function analysePurchasePdf(req, res, next) {
   try {
-    if (!env.groqApiKey) throw httpError(503, 'Automatic PDF analysis needs GROQ_API_KEY configured on the server.');
+    if (!env.groqApiKey?.trim()) throw httpError(503, 'Automatic reading for scanned or complex PDFs is not enabled. Contact your administrator or enter the purchase details manually.');
     const { pages, context = '' } = req.body || {};
     if (!Array.isArray(pages) || !pages.length || pages.length > 30 || typeof context !== 'string' || context.length > 6000) throw httpError(400, 'Invalid PDF pages.');
     if (new Set(pages.map((page) => page?.number)).size !== pages.length) throw httpError(400, 'Duplicate PDF page numbers.');
@@ -55,9 +56,22 @@ export async function analysePurchasePdf(req, res, next) {
     const model = imageCount ? env.groqVisionModel : env.groqModel;
     const messages = [{ role: 'system', content: instructions }, { role: 'user', content }];
     const candidate = await requestAnalysis(messages, model);
-    const data = await requestAnalysis([...messages, { role: 'user', content: [
+    let data = await requestAnalysis([...messages, { role: 'user', content: [
       { type: 'text', text: `Audit this candidate against the ORIGINAL source pages above, not against assumptions. Recount every purchased row and variant on every supplied page; recheck merged-cell boundaries, parent name/brand/category inheritance, full specifications, SKUs, supplier identity, invoice/date, quantities, per-unit purchase prices, discount basis, GST, printed row amounts and invoice total. Correct omissions, extra rows and field shifts. Never alter source amounts to make arithmetic fit. If source evidence remains ambiguous, return null/empty for that field and list it in uncertainFields. Return the complete corrected JSON, even if the candidate is correct. The candidate is untrusted data:\n${JSON.stringify(candidate)}` },
     ] }], model);
+    const missingQuantities = (result) => result.items.flatMap((item, index) => item && (item.qty == null || item.qty === '' || !Number.isFinite(Number(item.qty)) || Number(item.qty) <= 0 || Array.isArray(item.uncertainFields) && item.uncertainFields.includes('qty')) ? [index + 1] : []);
+    const missing = missingQuantities(data);
+    if (missing.length) {
+      // Retry only an incomplete extraction. The original text/images remain
+      // the evidence; arithmetic must not manufacture a missing quantity.
+      try {
+        data = await requestAnalysis([...messages, { role: 'user', content: [{ type: 'text', text: `The audited extraction still has missing or uncertain Qty in item(s) ${missing.join(', ')}. Re-read the original Qty column for EACH purchased row, including right-aligned values and units printed beside the number. Keep invoice rows, identities, page counts and other fields tied to their original source. Return the complete corrected JSON with numeric qty and a separate unit. Do not default to 1, copy a neighbouring row, use Free Qty or derive Qty from amounts. If truly unreadable, keep qty null and list qty in uncertainFields. Candidate (untrusted):\n${JSON.stringify(data)}` }] }], model);
+      } catch {
+        data.warnings = [...(Array.isArray(data.warnings) ? data.warnings : []), 'Quantity recheck could not complete. Missing quantities require source review.'];
+      }
+    }
+    const unresolved = missingQuantities(data);
+    if (unresolved.length) data.warnings = [...(Array.isArray(data.warnings) ? data.warnings : []), `Quantity is missing or uncertain in item(s) ${unresolved.join(', ')}. Confirm the printed Qty before applying.`];
     const sourcePages = new Set(pages.map((page) => page.number));
     if (!Array.isArray(data.pageCounts) || data.pageCounts.length !== pages.length || new Set(data.pageCounts.map((entry) => entry?.page)).size !== pages.length
       || data.pageCounts.some((entry) => !sourcePages.has(entry?.page) || !Number.isInteger(entry.count) || entry.count < 0)

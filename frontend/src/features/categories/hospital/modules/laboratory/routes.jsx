@@ -1,9 +1,11 @@
-import { TestOrdersPage } from './TestOrdersPage.jsx';
-import { LabReportsPage } from './LabReportsPage.jsx';
-import { SampleCollectionPage } from './SampleCollectionPage.jsx';
-import { DiagnosticsPage } from './DiagnosticsPage.jsx';
-import { LaboratoryPage } from './LaboratoryPage.jsx';
-import { LabResultsPage } from './LabResultsPage.jsx';
+import { lazyPage } from '../../../../../routes/lazyPage.jsx';
+
+const TestOrdersPage = lazyPage(() => import('./TestOrdersPage.jsx'), 'TestOrdersPage');
+const LabReportsPage = lazyPage(() => import('./LabReportsPage.jsx'), 'LabReportsPage');
+const SampleCollectionPage = lazyPage(() => import('./SampleCollectionPage.jsx'), 'SampleCollectionPage');
+const DiagnosticsPage = lazyPage(() => import('./DiagnosticsPage.jsx'), 'DiagnosticsPage');
+const LaboratoryPage = lazyPage(() => import('./LaboratoryPage.jsx'), 'LaboratoryPage');
+const LabResultsPage = lazyPage(() => import('./LabResultsPage.jsx'), 'LabResultsPage');
 
 export const laboratoryRoutes = [
   { path: '/hospital/test-orders', element: <TestOrdersPage /> },

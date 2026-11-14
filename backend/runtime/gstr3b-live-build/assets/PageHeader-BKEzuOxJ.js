@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-BWRPWl8p.js";var t=e();function n({title:e,subtitle:n,action:r}){return(0,t.jsxs)(`div`,{className:`page-head`,children:[(0,t.jsxs)(`div`,{children:[(0,t.jsx)(`h1`,{children:e}),n&&(0,t.jsx)(`p`,{children:n})]}),r&&(0,t.jsx)(`div`,{className:`page-actions`,children:r})]})}export{n as t};

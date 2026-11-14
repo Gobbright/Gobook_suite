@@ -89,6 +89,19 @@ export function downloadReportTableCsv(reportName, columns = [], rows = []) {
   csvDownload(reportName, columns, rows);
 }
 
+export function printReportTable(reportName, columns = [], rows = [], { subtitle = '' } = {}) {
+  const frame = document.createElement('iframe');
+  frame.title = `Print ${reportName}`;
+  frame.style.cssText = 'position:fixed;left:-12000px;width:1100px;height:800px;border:0';
+  document.body.appendChild(frame);
+  const doc = frame.contentDocument;
+  doc.open();
+  doc.write(`<!doctype html><html><head><title>${escapeHtml(reportName)}</title><style>@page{size:A4 landscape;margin:12mm}body{font:11px Arial,sans-serif;color:#17345c}h1{font-size:22px}p{color:#60738e}table{width:100%;border-collapse:collapse}th,td{border:1px solid #dce7f5;padding:7px;text-align:left}th{background:#edf4fc}thead{display:table-header-group}tr{break-inside:avoid}</style></head><body><h1>${escapeHtml(reportName)}</h1><p>${escapeHtml(subtitle)}</p><table><thead><tr>${columns.map(column => `<th>${escapeHtml(column)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(value => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`);
+  doc.close();
+  frame.contentWindow.addEventListener('afterprint', () => frame.remove(), { once: true });
+  window.setTimeout(() => { frame.contentWindow?.focus(); frame.contentWindow?.print(); }, 100);
+}
+
 export async function downloadReportTablePdf(reportName, columns = [], rows = [], { subtitle = '' } = {}) {
   const html2pdfModule = await import('html2pdf.js');
   const html2pdf = html2pdfModule.default || html2pdfModule;

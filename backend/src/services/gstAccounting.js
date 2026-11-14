@@ -1,7 +1,9 @@
 import { BusinessSettings } from '../models/BusinessSettings.js';
 import { Gstr3b } from '../models/Gstr3b.js';
-import { upsertSourceVoucher } from './accountingVouchers.js';
-import { buildGstr3bFromSales, mergeDraftGstr3b } from './gstFromSales.js';
+import { AccountingVoucher } from '../models/AccountingVoucher.js';
+import { getNextVoucherNo, upsertSourceVoucher } from './accountingVouchers.js';
+import { buildGstr3bFromSales } from './gstFromSales.js';
+import { mergeLiveGstr3b } from './gstr3bData.js';
 import { httpError } from '../utils/httpError.js';
 
 function money(value) {
@@ -68,16 +70,17 @@ export function calculateGstr3bPayment(draft = {}) {
   };
 }
 
-export async function postGstr3bAccounting({ user, period, gstin }) {
-  const existing = await Gstr3b.findOne({ gstin, period });
-  const generated = await buildGstr3bFromSales({ userId: user.id, period, gstin });
-  const draft = mergeDraftGstr3b(existing?.toObject(), generated);
+export async function postGstr3bAccounting({ user, period, gstin, invoiceScope, ownerId }) {
+  const existing = await Gstr3b.findOne({ userId: user.id, gstin, period });
+  const generated = await buildGstr3bFromSales({ userId: user.id, period, gstin, invoiceScope });
+  const draft = mergeLiveGstr3b(existing?.toObject(), generated);
+  if (draft.outwardRows?.some(row => Number(row.cess) > 0)) throw httpError(400, 'Accounting posting for cess is not supported.');
   const payment = calculateGstr3bPayment(draft);
   if (payment.outputTotal <= 0 && payment.lateFee <= 0) {
     throw httpError(400, 'No GST liability found for this period');
   }
 
-  const settings = await BusinessSettings.findOne({ userId: user.id }).lean();
+  const settings = await BusinessSettings.findOne({ userId: ownerId || user.id }).lean();
   const bankLedger = settings?.bankName || 'Bank';
   const lines = [
     { ledgerName: 'Output GST', ledgerGroup: 'Current Liabilities', side: 'debit', amount: payment.outputTotal, billRef: period, costCenter: 'GST' },
@@ -88,10 +91,13 @@ export async function postGstr3bAccounting({ user, period, gstin }) {
     lines.push({ ledgerName: 'GST Late Fee', ledgerGroup: 'Indirect Expenses', side: 'debit', amount: payment.lateFee, billRef: period, costCenter: 'GST' });
   }
 
-  const record = existing || await Gstr3b.create({ ...draft, gstin, period });
+  const record = existing || await Gstr3b.create({ ...draft, userId: user.id, gstin, period });
+  const existingVoucher = await AccountingVoucher.findOne({ userId: user.id, sourceType: 'gst-adjustment', sourceId: record._id }).select('voucherNo').lean();
+  const voucherNo = existingVoucher?.voucherNo || await getNextVoucherNo(user.id, 'GST Adjustment', periodDate(period), true);
   const voucher = await upsertSourceVoucher({
     businessId: user.businessId,
     voucherType: 'GST Adjustment',
+    voucherNo,
     date: periodDate(period),
     partyName: 'GST Department',
     referenceNo: period,

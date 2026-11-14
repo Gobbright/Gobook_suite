@@ -1,9 +1,11 @@
-import { PatientsPage } from './PatientsPage.jsx';
-import { AppointmentsPage } from './AppointmentsPage.jsx';
-import { AdmissionsPage } from './AdmissionsPage.jsx';
-import { DischargePage } from './DischargePage.jsx';
-import { MedicalHistoryPage } from './MedicalHistoryPage.jsx';
-import { FollowUpPlanPage } from '../clinical/FollowUpPlanPage.jsx';
+import { lazyPage } from '../../../../../routes/lazyPage.jsx';
+
+const PatientsPage = lazyPage(() => import('./PatientsPage.jsx'), 'PatientsPage');
+const AppointmentsPage = lazyPage(() => import('./AppointmentsPage.jsx'), 'AppointmentsPage');
+const AdmissionsPage = lazyPage(() => import('./AdmissionsPage.jsx'), 'AdmissionsPage');
+const DischargePage = lazyPage(() => import('./DischargePage.jsx'), 'DischargePage');
+const MedicalHistoryPage = lazyPage(() => import('./MedicalHistoryPage.jsx'), 'MedicalHistoryPage');
+const FollowUpPlanPage = lazyPage(() => import('../clinical/FollowUpPlanPage.jsx'), 'FollowUpPlanPage');
 
 export const patientManagementRoutes = [
   { path: '/hospital/patients', element: <PatientsPage /> },

@@ -13,6 +13,7 @@ import { MetaConnectionCard } from '../../../../meta/MetaConnectionCard.jsx';
 import { apiClient } from '../../../../../services/apiClient.js';
 import { exportRows } from '../../../../../utils/exportRows.js';
 import { formatCurrency } from '../../../../../utils/formatCurrency.js';
+import { ProductModal } from '../inventory/ProductsPage.jsx';
 
 const SIDEBAR = [
   ['dashboard', 'Dashboard', LayoutDashboard],
@@ -799,7 +800,15 @@ function FlowFormModal({ flow, onClose, onSaved }) {
   );
 }
 
-function CatalogProductModal({ product, categories, onClose, onSaved }) {
+export function CatalogProductModal({ product, categories, onClose, onSaved }) {
+  if (product?._id) return <div className="fixed inset-0 z-[70]">
+    <ProductModal mode="edit" initial={product} categories={categories} brands={[]} sizes={[]} fabrics={[]} colours={[]} types={[]}
+      onClose={onClose} onSave={async () => { await onSaved(); onClose(); }} />
+  </div>;
+  return <CatalogNewProductModal product={product} categories={categories} onClose={onClose} onSaved={onSaved} />;
+}
+
+function CatalogNewProductModal({ product, categories, onClose, onSaved }) {
   const [form, setForm] = useState(() => ({
     description: product?.description || '',
     productDescription: product?.productDescription || '',

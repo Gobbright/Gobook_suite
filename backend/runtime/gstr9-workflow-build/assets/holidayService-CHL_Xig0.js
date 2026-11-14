@@ -1,0 +1,1 @@
+import{a as e,i as t}from"./monthScope-CPwbD7jf.js";var n={list:n=>e.get(`/employee/holidays${t(n)}`),adminList:n=>e.get(`/admin/holidays${t(n)}`),create:t=>e.post(`/admin/holidays`,t)};export{n as t};

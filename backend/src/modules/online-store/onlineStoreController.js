@@ -5,7 +5,7 @@ import { Customer } from '../../models/Customer.js';
 import { Invoice } from '../../models/Invoice.js';
 import { OnlineOrder } from '../../models/OnlineOrder.js';
 import { OnlineStoreSettings } from '../../models/OnlineStoreSettings.js';
-import { normalizeThemeDesign } from './themeDesign.js';
+import { normalizeThemeDesign, TEMPLATE_NAMES } from './themeDesign.js';
 import { Product } from '../../models/Product.js';
 import { StockIn } from '../../models/StockIn.js';
 import { StockOut } from '../../models/StockOut.js';
@@ -16,7 +16,7 @@ import { atomicInventoryHandler } from '../../services/inventoryTransaction.js';
 import { httpError } from '../../utils/httpError.js';
 import { businessSettingsForInvoice } from '../retail/sales/shared/invoiceBusinessSettings.js';
 
-const THEMES = ['boutique', 'marketplace', 'premium'];
+const THEMES = TEMPLATE_NAMES;
 
 function slugify(value) {
   return String(value || 'store')

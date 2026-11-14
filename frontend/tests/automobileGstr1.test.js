@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { filterGstr1Documents, gstr1Documents, gstr1RateSummary, gstinStatus, isCredit, validateGstr1 } from '../src/features/categories/automobile/automobileGstr1.js';
+import { filterGstr1Documents, gstr1Documents, gstr1RateSummary, gstr1Sections, gstinStatus, isCredit, validateGstr1 } from '../src/features/categories/automobile/automobileGstr1.js';
 
 const gstin = '33AAACT1234A1Z5';
 const invoice = { sourceId: 'one', documentType: 'invoice', invoiceNo: 'INV-1', date: '2026-10-10', name: 'Auto Parts', gstin, state: 'Tamil Nadu', branch: 'Main', taxable: 1000, cgst: 90, sgst: 90, igst: 0, rate: 18 };
+
+test('category lists use server classification without overlapping exports, B2C or notes', () => {
+  const documents = ['b2b', 'b2cl', 'b2cs', 'exports', 'notes'].map((returnSection, index) => ({ ...invoice, sourceId: String(index), returnSection, documentType: returnSection === 'notes' ? 'credit-note' : 'invoice' }));
+  const sections = gstr1Sections(documents);
+  for (const key of ['b2b', 'b2cl', 'b2cs', 'exports', 'notes']) assert.equal(sections[key].length, 1);
+  assert.equal(sections.credit.length, 1);
+  assert.equal(sections.advances.length, 0);
+});
 
 test('source documents preserve note signs and source identity', () => {
   const rows = gstr1Documents({ sourceDocuments: [invoice, { ...invoice, sourceId: 'two', documentType: 'credit-note', invoiceNo: 'CN-1', taxable: -100 }] });

@@ -1,5 +1,6 @@
 import { ACTIVE_FINANCIAL_FILTER } from './salesLifecycle.js';
 import { Invoice } from '../models/Invoice.js';
+import { gstr1Category } from './gstr1Categories.js';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -21,7 +22,7 @@ export const EMPTY_ITC_AVAILABLE = [
   { key: 'A(1)', label: 'Import of goods', cgst: 0, sgst: 0, igst: 0, cess: 0 },
   { key: 'A(2)', label: 'Import of services', cgst: 0, sgst: 0, igst: 0, cess: 0 },
   { key: 'A(3)', label: 'Inward supplies from ISD', cgst: 0, sgst: 0, igst: 0, cess: 0 },
-  { key: 'A(5)', label: 'All other ITC (incl. from GSTR-2B)', cgst: 0, sgst: 0, igst: 0, cess: 0 },
+  { key: 'A(5)', label: 'All other ITC (purchase entries)', cgst: 0, sgst: 0, igst: 0, cess: 0 },
 ];
 
 export const EMPTY_ITC_REVERSED = [
@@ -100,20 +101,32 @@ function sumRows(rows, fields = ['taxable', 'cgst', 'sgst', 'igst', 'cess']) {
   }, Object.fromEntries(fields.map((field) => [field, 0])));
 }
 
-async function findSalesDocsForPeriod(userId, period, documentTypes) {
+export function gstInvoicePeriodMatch(period) {
+  const parsed = parsePeriod(period);
+  if (!parsed) return { _id: null };
+  const indiaOffset = 330 * 60_000;
+  const start = new Date(Date.UTC(parsed.year, parsed.monthIdx, 1) - indiaOffset);
+  const end = new Date(Date.UTC(parsed.year, parsed.monthIdx + 1, 1) - indiaOffset);
+  return { $or: [
+    { 'meta.date': { $regex: `^${parsed.monthPrefix}` } },
+    { $and: [{ $or: [{ 'meta.date': { $exists: false } }, { 'meta.date': null }, { 'meta.date': '' }] }, { createdAt: { $gte: start, $lt: end } }] },
+  ] };
+}
+
+async function findSalesDocsForPeriod(userId, period, documentTypes, invoiceScope) {
   const parsed = parsePeriod(period);
   if (!parsed) return [];
 
   return Invoice.find({
     ...ACTIVE_FINANCIAL_FILTER,
-    userId,
+    ...(invoiceScope || { userId }),
     documentType: { $in: documentTypes },
-    'meta.date': { $regex: `^${parsed.monthPrefix}` },
+    $and: [...(invoiceScope?.$and || []), gstInvoicePeriodMatch(period)],
   }).lean();
 }
 
-export async function buildGstr1FromSales({ userId, period, filingType = 'monthly', gstin }) {
-  const docs = await findSalesDocsForPeriod(userId, period, OUTWARD_DOC_TYPES);
+export async function buildGstr1FromSales({ userId, period, filingType = 'monthly', gstin, invoiceScope, annualReview = false }) {
+  const docs = await findSalesDocsForPeriod(userId, period, OUTWARD_DOC_TYPES, invoiceScope);
   const b2b = [];
   const sourceDocuments = [];
   const b2csMap = {};
@@ -142,7 +155,9 @@ export async function buildGstr1FromSales({ userId, period, filingType = 'monthl
       rateRows[line.rate] ||= { rate: line.rate };
       addTax(rateRows[line.rate], line);
 
-      const hsnCode = String(item.hsn || '9999').trim();
+      if (annualReview && documentType === 'e-way-bill') continue;
+
+      const hsnCode = String(item.hsn || (annualReview ? '' : '9999')).trim();
       const hsnKey = `${hsnCode}||${line.rate}`;
       if (!hsnMap[hsnKey]) {
         hsnMap[hsnKey] = {
@@ -187,13 +202,16 @@ export async function buildGstr1FromSales({ userId, period, filingType = 'monthl
     if (documentType === 'debit-note') addTax(noteTotals.debit, docTotal);
 
     const value = r2(docTotal.taxable + docTotal.cgst + docTotal.sgst + docTotal.igst);
-    sourceDocuments.push({
+    const sourceDocument = {
       sourceId: String(doc._id), documentType, branch: doc.branch || '',
       gstin: customerGstin, name: customerName, state: customerState,
       invoiceNo: doc.number, date: doc.meta?.date || '', rate: dominantRate,
+      invoiceType: doc.meta?.invoiceType || 'regular', supplyType: doc.supplyType || 'intrastate',
       value, ...docTotal, rateRows: Object.values(rateRows),
       missingHsn: (doc.items || []).filter((item) => !String(item.hsn || '').trim()).length,
-    });
+    };
+    sourceDocument.returnSection = gstr1Category(sourceDocument, period);
+    sourceDocuments.push(sourceDocument);
     if (customerGstin) {
       b2b.push({
         gstin: customerGstin,
@@ -235,24 +253,38 @@ export async function buildGstr1FromSales({ userId, period, filingType = 'monthl
   };
 }
 
-export async function buildGstr3bFromSales({ userId, period, gstin }) {
-  const gstr1 = await buildGstr1FromSales({ userId, period, gstin });
-  const taxableRows = [...gstr1.b2b, ...gstr1.b2cs];
+export async function buildGstr3bFromSales({ userId, period, gstin, invoiceScope, sourceGstr1 }) {
+  const gstr1 = sourceGstr1 || await buildGstr1FromSales({ userId, period, gstin, invoiceScope });
   const outward = EMPTY_OUTWARD_ROWS.map((row) => ({ ...row }));
-  const rowA = outward.find((row) => row.key === 'a');
-  addTax(rowA, sumRows(taxableRows));
+  const interstateSupplies = [];
+  for (const doc of gstr1.sourceDocuments) {
+    if (!doc.gstin && String(doc.supplyType).toLowerCase() === 'interstate' && !String(doc.invoiceType).toLowerCase().startsWith('export')) {
+      const state = doc.state || 'Place of supply not recorded';
+      let row = interstateSupplies.find(item => item.label === state);
+      if (!row) { row = { key: state, label: state, taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 }; interstateSupplies.push(row); }
+      addTax(row, doc);
+    }
+    for (const line of doc.rateRows || [doc]) {
+      const key = doc.documentType === 'bill-of-supply' ? 'e' : Number(line.rate) === 0 ? 'c' : 'a';
+      addTax(outward.find(row => row.key === key), line);
+    }
+  }
 
-  const purchases = await findSalesDocsForPeriod(userId, period, PURCHASE_DOC_TYPES);
+  const purchases = await findSalesDocsForPeriod(userId, period, PURCHASE_DOC_TYPES, invoiceScope);
   const itcAvailable = EMPTY_ITC_AVAILABLE.map((row) => ({ ...row }));
   const allOtherItc = itcAvailable.find((row) => row.key === 'A(5)');
 
   const purchaseSummaries = [];
+  const untaxedInward = { interstate: 0, intrastate: 0 };
+  const purchaseReferences = [];
   for (const purchase of purchases) {
     const purchaseSummary = { branch: purchase.branch || '', registered: Boolean(purchase.customer?.gstin), taxable: 0, cgst: 0, sgst: 0, igst: 0 };
     const isInterstate = String(purchase.supplyType || '').toLowerCase() === 'interstate';
+    purchaseReferences.push({ gstin: purchase.customer?.gstin || '', invoiceNo: purchase.extra?.vendorInvoiceNo || purchase.number });
     for (const item of purchase.items ?? []) {
       const line = lineAmounts(item, isInterstate, true, 1);
       addTax(purchaseSummary, line);
+      if (Number(item.gstRate || 0) === 0) untaxedInward[isInterstate ? 'interstate' : 'intrastate'] = r2(untaxedInward[isInterstate ? 'interstate' : 'intrastate'] + line.taxable);
       allOtherItc.cgst = r2(allOtherItc.cgst + line.cgst);
       allOtherItc.sgst = r2(allOtherItc.sgst + line.sgst);
       allOtherItc.igst = r2(allOtherItc.igst + line.igst);
@@ -261,6 +293,7 @@ export async function buildGstr3bFromSales({ userId, period, gstin }) {
       const amount = Number(charge.amount) || 0;
       const gstRate = Number(charge.gstRate) || 0;
       const tax = r2(amount * gstRate / 100);
+      if (gstRate === 0) untaxedInward[isInterstate ? 'interstate' : 'intrastate'] = r2(untaxedInward[isInterstate ? 'interstate' : 'intrastate'] + amount);
       addTax(purchaseSummary, { taxable: amount, cgst: isInterstate ? 0 : tax / 2, sgst: isInterstate ? 0 : tax / 2, igst: isInterstate ? tax : 0 });
       allOtherItc.cgst = r2(allOtherItc.cgst + (isInterstate ? 0 : tax / 2));
       allOtherItc.sgst = r2(allOtherItc.sgst + (isInterstate ? 0 : tax / 2));
@@ -280,13 +313,18 @@ export async function buildGstr3bFromSales({ userId, period, gstin }) {
     lateFeeSgst: 0,
     purchaseCount: purchases.length,
     purchaseSummaries,
-    invoiceCount: gstr1.invoiceCount,
+    purchaseReferences,
+    interstateSupplies,
+    untaxedInward,
+    invoiceCount: gstr1.sourceDocuments.filter(doc => ['invoice', 'bill-of-supply', 'e-invoice'].includes(doc.documentType)).length,
+    b2bInvoiceCount: gstr1.sourceDocuments.filter(doc => ['invoice', 'bill-of-supply', 'e-invoice'].includes(doc.documentType) && doc.gstin).length,
+    b2cInvoiceCount: gstr1.sourceDocuments.filter(doc => ['invoice', 'bill-of-supply', 'e-invoice'].includes(doc.documentType) && !doc.gstin).length,
     source: 'sales',
   };
 }
 
-export async function buildPurchaseReconciliationFromSales({ userId, period, gstin, type = '2b' }) {
-  const purchases = await findSalesDocsForPeriod(userId, period, PURCHASE_DOC_TYPES);
+export async function buildPurchaseReconciliationFromSales({ userId, period, gstin, type = '2b', invoiceScope }) {
+  const purchases = await findSalesDocsForPeriod(userId, period, PURCHASE_DOC_TYPES, invoiceScope);
   const entries = purchases.map((purchase) => {
     let itcBooks = 0;
     const isInterstate = String(purchase.supplyType || '').toLowerCase() === 'interstate';
@@ -327,10 +365,10 @@ export async function buildPurchaseReconciliationFromSales({ userId, period, gst
   return { gstin, period, type, entries, source: 'sales' };
 }
 
-export async function buildGstr9FromSales({ userId, fy, gstin }) {
+export async function buildGstr9FromSales({ userId, fy, gstin, invoiceScope }) {
   const periods = periodsForFy(fy);
-  const gstr1Docs = await Promise.all(periods.map((period) => buildGstr1FromSales({ userId, period, gstin })));
-  const gstr3bDocs = await Promise.all(periods.map((period) => buildGstr3bFromSales({ userId, period, gstin })));
+  const gstr1Docs = await Promise.all(periods.map((period) => buildGstr1FromSales({ userId, period, gstin, invoiceScope, annualReview: true })));
+  const gstr3bDocs = await Promise.all(periods.map((period, index) => buildGstr3bFromSales({ userId, period, gstin, invoiceScope, sourceGstr1: gstr1Docs[index] })));
   return { periods, gstr1Docs, gstr3bDocs };
 }
 
@@ -341,12 +379,15 @@ export function taxTotal(rows = []) {
 export function mergeDraftGstr3b(saved, generated) {
   if (!saved) return generated;
   if (saved.status === 'filed') return saved;
-
+  const itcAvailable = saved.itcSourceMode === 'adjustments' ? generated.itcAvailable.map(row => {
+    const adjustment = saved.itcAdjustments?.find(item => item.key === row.key);
+    return { ...row, ...Object.fromEntries(['cgst', 'sgst', 'igst', 'cess'].map(key => [key, r2((Number(row[key]) || 0) + (Number(adjustment?.[key]) || 0))])) };
+  }) : saved.itcAvailable?.length ? saved.itcAvailable : generated.itcAvailable;
   return {
     ...generated,
     ...saved,
     outwardRows: generated.outwardRows,
-    itcAvailable: saved.itcAvailable?.length ? saved.itcAvailable : generated.itcAvailable,
+    itcAvailable,
     itcReversed: saved.itcReversed?.length ? saved.itcReversed : generated.itcReversed,
     lateFeeCgst: saved.lateFeeCgst ?? generated.lateFeeCgst,
     lateFeeSgst: saved.lateFeeSgst ?? generated.lateFeeSgst,

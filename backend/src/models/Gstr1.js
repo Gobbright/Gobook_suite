@@ -54,7 +54,7 @@ const cdnrSchema = new Schema({
 
 const gstr1Schema = new Schema({
   userId:      { type: Schema.Types.ObjectId, ref: 'AppUser', required: true, index: true },
-  gstin:       { type: String, default: '27ZZZZZ9999A1Z5' },
+  gstin:       { type: String, default: '' },
   period:      { type: String, required: true },
   filingType:  { type: String, enum: ['monthly', 'quarterly'], default: 'monthly' },
   status:      { type: String, enum: ['draft', 'filed'], default: 'draft' },
@@ -64,6 +64,14 @@ const gstr1Schema = new Schema({
   hsn:         { type: [hsnSchema], default: [] },
   arn:         { type: String },
   filedAt:     { type: Date },
+  sourceDocuments: { type: [Schema.Types.Mixed], default: undefined },
+  preparation: { type: Schema.Types.Mixed, default: undefined },
+  filing: {
+    source: { type: String, enum: ['manual', 'provider'] },
+    recordedBy: { type: Schema.Types.ObjectId, ref: 'AppUser' },
+    recordedAt: Date,
+    sourceHash: String,
+  },
 }, { timestamps: true });
 
 gstr1Schema.index({ userId: 1, gstin: 1, period: 1, filingType: 1 }, { unique: true });

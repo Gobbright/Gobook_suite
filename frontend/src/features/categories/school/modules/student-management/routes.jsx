@@ -1,7 +1,9 @@
-import { GenericModulePage } from '../../../../../components/common/GenericModulePage.jsx';
-import { StudentRegistrationPage } from './StudentRegistrationPage.jsx';
-import { StudentListPage } from './StudentListPage.jsx';
-import { StudentProfilePage } from './StudentProfilePage.jsx';
+import { lazyPage } from '../../../../../routes/lazyPage.jsx';
+
+const GenericModulePage = lazyPage(() => import('../../../../../components/common/GenericModulePage.jsx'), 'GenericModulePage');
+const StudentRegistrationPage = lazyPage(() => import('./StudentRegistrationPage.jsx'), 'StudentRegistrationPage');
+const StudentListPage = lazyPage(() => import('./StudentListPage.jsx'), 'StudentListPage');
+const StudentProfilePage = lazyPage(() => import('./StudentProfilePage.jsx'), 'StudentProfilePage');
 
 const GROUP = 'Students';
 const CATEGORY = 'School';

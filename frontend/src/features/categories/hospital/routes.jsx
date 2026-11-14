@@ -1,62 +1,66 @@
+import { lazyPage } from '../../../routes/lazyPage.jsx';
 import { clinicalRoutes } from './modules/clinical/routes.jsx';
-import { ConsultationPage } from './modules/clinical/ConsultationPage.jsx';
-import { DiagnosisPage } from './modules/clinical/DiagnosisPage.jsx';
-import { PrescriptionPage } from './modules/clinical/PrescriptionPage.jsx';
-import { ProceduresPage } from './modules/clinical/ProceduresPage.jsx';
-import { FollowUpPlanPage } from './modules/clinical/FollowUpPlanPage.jsx';
-import { AdmissionPage } from './modules/clinical/AdmissionPage.jsx';
-import { InpatientsPage } from './modules/clinical/InpatientsPage.jsx';
-import { NursesPage } from './modules/clinical/NursesPage.jsx';
-import { PatientAssignmentPage } from './modules/clinical/PatientAssignmentPage.jsx';
-import { ShiftAllocationPage } from './modules/clinical/ShiftAllocationPage.jsx';
-import { WardRoomsPage } from './modules/clinical/WardRoomsPage.jsx';
-import { BedAllocationPage } from './modules/clinical/BedAllocationPage.jsx';
-import { TransferPage } from './modules/clinical/TransferPage.jsx';
-import { DischargeWorkflowPage } from './modules/clinical/DischargeWorkflowPage.jsx';
+
 import { laboratoryRoutes } from './modules/laboratory/routes.jsx';
-import { LaboratoryPage } from './modules/laboratory/LaboratoryPage.jsx';
-import { RadiologyPage } from './modules/laboratory/RadiologyPage.jsx';
-import { ScanReportsPage } from './modules/laboratory/ScanReportsPage.jsx';
-import { BillsInvoicesPage } from './modules/medical-billing/BillsInvoicesPage.jsx';
-import { EstimatesPage } from './modules/medical-billing/EstimatesPage.jsx';
-import { HospitalPaymentsPage } from './modules/medical-billing/HospitalPaymentsPage.jsx';
+
 import { medicalBillingRoutes } from './modules/medical-billing/routes.jsx';
-import { NewBillPage } from './modules/medical-billing/NewBillPage.jsx';
-import { OutstandingPage } from './modules/medical-billing/OutstandingPage.jsx';
-import { PackagesPage } from './modules/medical-billing/PackagesPage.jsx';
-import { RefundsPage } from './modules/medical-billing/RefundsPage.jsx';
+
 import { patientManagementRoutes } from './modules/patient-management/routes.jsx';
-import { BatchExpiryPage } from './modules/pharmacy/BatchExpiryPage.jsx';
-import { MedicineDispensingPage } from './modules/pharmacy/MedicineDispensingPage.jsx';
-import { MedicineReturnsPage } from './modules/pharmacy/MedicineReturnsPage.jsx';
-import { PharmacyBillingPage } from './modules/pharmacy/PharmacyBillingPage.jsx';
-import { PrescriptionsQueuePage } from './modules/pharmacy/PrescriptionsQueuePage.jsx';
+
 import { pharmacyRoutes } from './modules/pharmacy/routes.jsx';
-import { AppointmentCalendarPage } from './AppointmentCalendarPage.jsx';
-import { BookAppointmentPage } from './BookAppointmentPage.jsx';
-import { DoctorSchedulePage } from './DoctorSchedulePage.jsx';
-import { EmergencyCasesPage } from './EmergencyCasesPage.jsx';
-import { EmergencyRegistrationPage } from './EmergencyRegistrationPage.jsx';
-import { HospitalReportsPage } from './HospitalReportsPage.jsx';
-import { OTBookingPage } from './OTBookingPage.jsx';
-import { OperationNotesPage } from './OperationNotesPage.jsx';
-import { QueueTokenPage } from './QueueTokenPage.jsx';
-import { SurgerySchedulePage } from './SurgerySchedulePage.jsx';
-import { TriagePage } from './TriagePage.jsx';
-import { DocumentsPage } from './modules/patient-management/DocumentsPage.jsx';
-import { InsurancePage } from './modules/patient-management/InsurancePage.jsx';
-import { PatientRegistrationPage } from './PatientRegistrationPage.jsx';
-import {
-  AppointmentWorkflowPage,
-  BedWorkflowPage,
-  ClinicalWorkflowPage,
-  DiagnosticWorkflowPage,
-  DoctorWorkflowPage,
-  EmergencyWorkflowPage,
-  NursingWorkflowPage,
-  PatientWorkflowPage,
-  PharmacyWorkflowPage,
-} from './HospitalWorkflowPages.jsx';
+
+const ConsultationPage = lazyPage(() => import('./modules/clinical/ConsultationPage.jsx'), 'ConsultationPage');
+const DiagnosisPage = lazyPage(() => import('./modules/clinical/DiagnosisPage.jsx'), 'DiagnosisPage');
+const PrescriptionPage = lazyPage(() => import('./modules/clinical/PrescriptionPage.jsx'), 'PrescriptionPage');
+const ProceduresPage = lazyPage(() => import('./modules/clinical/ProceduresPage.jsx'), 'ProceduresPage');
+const FollowUpPlanPage = lazyPage(() => import('./modules/clinical/FollowUpPlanPage.jsx'), 'FollowUpPlanPage');
+const AdmissionPage = lazyPage(() => import('./modules/clinical/AdmissionPage.jsx'), 'AdmissionPage');
+const InpatientsPage = lazyPage(() => import('./modules/clinical/InpatientsPage.jsx'), 'InpatientsPage');
+const NursesPage = lazyPage(() => import('./modules/clinical/NursesPage.jsx'), 'NursesPage');
+const PatientAssignmentPage = lazyPage(() => import('./modules/clinical/PatientAssignmentPage.jsx'), 'PatientAssignmentPage');
+const ShiftAllocationPage = lazyPage(() => import('./modules/clinical/ShiftAllocationPage.jsx'), 'ShiftAllocationPage');
+const WardRoomsPage = lazyPage(() => import('./modules/clinical/WardRoomsPage.jsx'), 'WardRoomsPage');
+const BedAllocationPage = lazyPage(() => import('./modules/clinical/BedAllocationPage.jsx'), 'BedAllocationPage');
+const TransferPage = lazyPage(() => import('./modules/clinical/TransferPage.jsx'), 'TransferPage');
+const DischargeWorkflowPage = lazyPage(() => import('./modules/clinical/DischargeWorkflowPage.jsx'), 'DischargeWorkflowPage');
+const LaboratoryPage = lazyPage(() => import('./modules/laboratory/LaboratoryPage.jsx'), 'LaboratoryPage');
+const RadiologyPage = lazyPage(() => import('./modules/laboratory/RadiologyPage.jsx'), 'RadiologyPage');
+const ScanReportsPage = lazyPage(() => import('./modules/laboratory/ScanReportsPage.jsx'), 'ScanReportsPage');
+const BillsInvoicesPage = lazyPage(() => import('./modules/medical-billing/BillsInvoicesPage.jsx'), 'BillsInvoicesPage');
+const EstimatesPage = lazyPage(() => import('./modules/medical-billing/EstimatesPage.jsx'), 'EstimatesPage');
+const HospitalPaymentsPage = lazyPage(() => import('./modules/medical-billing/HospitalPaymentsPage.jsx'), 'HospitalPaymentsPage');
+const NewBillPage = lazyPage(() => import('./modules/medical-billing/NewBillPage.jsx'), 'NewBillPage');
+const OutstandingPage = lazyPage(() => import('./modules/medical-billing/OutstandingPage.jsx'), 'OutstandingPage');
+const PackagesPage = lazyPage(() => import('./modules/medical-billing/PackagesPage.jsx'), 'PackagesPage');
+const RefundsPage = lazyPage(() => import('./modules/medical-billing/RefundsPage.jsx'), 'RefundsPage');
+const BatchExpiryPage = lazyPage(() => import('./modules/pharmacy/BatchExpiryPage.jsx'), 'BatchExpiryPage');
+const MedicineDispensingPage = lazyPage(() => import('./modules/pharmacy/MedicineDispensingPage.jsx'), 'MedicineDispensingPage');
+const MedicineReturnsPage = lazyPage(() => import('./modules/pharmacy/MedicineReturnsPage.jsx'), 'MedicineReturnsPage');
+const PharmacyBillingPage = lazyPage(() => import('./modules/pharmacy/PharmacyBillingPage.jsx'), 'PharmacyBillingPage');
+const PrescriptionsQueuePage = lazyPage(() => import('./modules/pharmacy/PrescriptionsQueuePage.jsx'), 'PrescriptionsQueuePage');
+const AppointmentCalendarPage = lazyPage(() => import('./AppointmentCalendarPage.jsx'), 'AppointmentCalendarPage');
+const BookAppointmentPage = lazyPage(() => import('./BookAppointmentPage.jsx'), 'BookAppointmentPage');
+const DoctorSchedulePage = lazyPage(() => import('./DoctorSchedulePage.jsx'), 'DoctorSchedulePage');
+const EmergencyCasesPage = lazyPage(() => import('./EmergencyCasesPage.jsx'), 'EmergencyCasesPage');
+const EmergencyRegistrationPage = lazyPage(() => import('./EmergencyRegistrationPage.jsx'), 'EmergencyRegistrationPage');
+const HospitalReportsPage = lazyPage(() => import('./HospitalReportsPage.jsx'), 'HospitalReportsPage');
+const OTBookingPage = lazyPage(() => import('./OTBookingPage.jsx'), 'OTBookingPage');
+const OperationNotesPage = lazyPage(() => import('./OperationNotesPage.jsx'), 'OperationNotesPage');
+const QueueTokenPage = lazyPage(() => import('./QueueTokenPage.jsx'), 'QueueTokenPage');
+const SurgerySchedulePage = lazyPage(() => import('./SurgerySchedulePage.jsx'), 'SurgerySchedulePage');
+const TriagePage = lazyPage(() => import('./TriagePage.jsx'), 'TriagePage');
+const DocumentsPage = lazyPage(() => import('./modules/patient-management/DocumentsPage.jsx'), 'DocumentsPage');
+const InsurancePage = lazyPage(() => import('./modules/patient-management/InsurancePage.jsx'), 'InsurancePage');
+const PatientRegistrationPage = lazyPage(() => import('./PatientRegistrationPage.jsx'), 'PatientRegistrationPage');
+const AppointmentWorkflowPage = lazyPage(() => import('./HospitalWorkflowPages.jsx'), 'AppointmentWorkflowPage');
+const BedWorkflowPage = lazyPage(() => import('./HospitalWorkflowPages.jsx'), 'BedWorkflowPage');
+const ClinicalWorkflowPage = lazyPage(() => import('./HospitalWorkflowPages.jsx'), 'ClinicalWorkflowPage');
+const DiagnosticWorkflowPage = lazyPage(() => import('./HospitalWorkflowPages.jsx'), 'DiagnosticWorkflowPage');
+const DoctorWorkflowPage = lazyPage(() => import('./HospitalWorkflowPages.jsx'), 'DoctorWorkflowPage');
+const EmergencyWorkflowPage = lazyPage(() => import('./HospitalWorkflowPages.jsx'), 'EmergencyWorkflowPage');
+const NursingWorkflowPage = lazyPage(() => import('./HospitalWorkflowPages.jsx'), 'NursingWorkflowPage');
+const PatientWorkflowPage = lazyPage(() => import('./HospitalWorkflowPages.jsx'), 'PatientWorkflowPage');
+const PharmacyWorkflowPage = lazyPage(() => import('./HospitalWorkflowPages.jsx'), 'PharmacyWorkflowPage');
 
 const patientFields = [
   { key: 'name', label: 'Patient Name', required: true },

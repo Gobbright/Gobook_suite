@@ -1,4 +1,6 @@
-import { GenericModulePage } from '../../../../../components/common/GenericModulePage.jsx';
+import { lazyPage } from '../../../../../routes/lazyPage.jsx';
+
+const GenericModulePage = lazyPage(() => import('../../../../../components/common/GenericModulePage.jsx'), 'GenericModulePage');
 
 const GROUP = 'Customers & Vehicles';
 const CATEGORY = 'Automobile';

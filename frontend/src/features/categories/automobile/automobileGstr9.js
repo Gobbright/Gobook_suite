@@ -8,7 +8,7 @@ export function annualSummary(data = {}) {
   const liability = annualTax(data.table9?.[0]);
   const inward = annualSum(data.annualDetails?.inwardRows, 'taxable');
   const exceptions = (data.annualDetails?.monthly || []).filter((row) => Math.abs(row.difference) >= 0.01);
-  const outward = (data.table4 || []).filter((row) => ['4A', '4B', '4C', '4D', '4E'].includes(row.sno));
+  const outward = data.overview ? data.table4 || [] : (data.table4 || []).filter((row) => ['4A', '4B', '4C', '4D', '4E'].includes(row.sno));
   const issues = [];
   if (!data.gstin || !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(data.gstin)) issues.push('Business GSTIN is missing or has an invalid format.');
   if (reversal > available) issues.push('Annual ITC reversals exceed available ITC.');

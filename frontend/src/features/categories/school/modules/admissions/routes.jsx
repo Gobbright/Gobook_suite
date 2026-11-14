@@ -1,8 +1,10 @@
-import { NewAdmissionPage } from './NewAdmissionPage.jsx';
-import { ApplicationsPage } from './ApplicationsPage.jsx';
-import { EnquiriesPage } from './EnquiriesPage.jsx';
-import { MeritSelectionPage } from './MeritSelectionPage.jsx';
-import { AdmissionReportsPage } from './AdmissionReportsPage.jsx';
+import { lazyPage } from '../../../../../routes/lazyPage.jsx';
+
+const NewAdmissionPage = lazyPage(() => import('./NewAdmissionPage.jsx'), 'NewAdmissionPage');
+const ApplicationsPage = lazyPage(() => import('./ApplicationsPage.jsx'), 'ApplicationsPage');
+const EnquiriesPage = lazyPage(() => import('./EnquiriesPage.jsx'), 'EnquiriesPage');
+const MeritSelectionPage = lazyPage(() => import('./MeritSelectionPage.jsx'), 'MeritSelectionPage');
+const AdmissionReportsPage = lazyPage(() => import('./AdmissionReportsPage.jsx'), 'AdmissionReportsPage');
 
 export const admissionsRoutes = [
   { path: '/school/admissions/new-admission', element: <NewAdmissionPage /> },

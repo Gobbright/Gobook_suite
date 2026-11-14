@@ -1,23 +1,26 @@
+import { lazyPage } from './lazyPage.jsx';
 import { useParams } from 'react-router-dom';
 
-import { CreditNotePage } from '../features/categories/retail/modules/sales/CreditNotePage.jsx';
-import { BillOfSupplyPage } from '../features/categories/retail/modules/sales/BillOfSupplyPage.jsx';
-import { DebitNotePage } from '../features/categories/retail/modules/sales/DebitNotePage.jsx';
-import { DeliveryChallanPage } from '../features/categories/retail/modules/sales/DeliveryChallanPage.jsx';
-import { EInvoicePage } from '../features/categories/retail/modules/sales/EInvoicePage.jsx';
-import { EWayBillFormPage, EWayBillPage } from '../features/categories/retail/modules/sales/EWayBillPage.jsx';
-import { InvoicePage } from '../features/categories/retail/modules/sales/InvoicePage.jsx';
-import { PurchaseEntryPage } from '../features/categories/retail/modules/sales/PurchaseEntryPage.jsx';
-import { PurchaseOrderPage } from '../features/categories/retail/modules/sales/PurchaseOrderPage.jsx';
-import { QuotationPage } from '../features/categories/retail/modules/sales/QuotationPage.jsx';
-import { ReceivablesPage } from '../features/categories/retail/modules/sales/ReceivablesPage.jsx';
-import { SalesReturnPage } from '../features/categories/retail/modules/sales/SalesReturnPage.jsx';
-import { SupplierReturnPage } from '../features/categories/retail/modules/sales/SupplierReturnPage.jsx';
-import { PharmacyBillListPage } from '../features/categories/hospital/modules/pharmacy/PharmacyBillListPage.jsx';
 import { documentConfigs } from '../features/categories/retail/modules/sales/documentConfigs.js';
-import { CreateDocumentPage } from '../features/categories/retail/modules/sales/shared/CreateDocumentPage.jsx';
-import { InvoiceViewPage } from '../features/categories/retail/modules/sales/shared/InvoiceViewPage.jsx';
-import { DashboardPage } from '../pages/DashboardPage.jsx';
+
+const CreditNotePage = lazyPage(() => import('../features/categories/retail/modules/sales/CreditNotePage.jsx'), 'CreditNotePage');
+const BillOfSupplyPage = lazyPage(() => import('../features/categories/retail/modules/sales/BillOfSupplyPage.jsx'), 'BillOfSupplyPage');
+const DebitNotePage = lazyPage(() => import('../features/categories/retail/modules/sales/DebitNotePage.jsx'), 'DebitNotePage');
+const DeliveryChallanPage = lazyPage(() => import('../features/categories/retail/modules/sales/DeliveryChallanPage.jsx'), 'DeliveryChallanPage');
+const EInvoicePage = lazyPage(() => import('../features/categories/retail/modules/sales/EInvoicePage.jsx'), 'EInvoicePage');
+const EWayBillFormPage = lazyPage(() => import('../features/categories/retail/modules/sales/EWayBillPage.jsx'), 'EWayBillFormPage');
+const EWayBillPage = lazyPage(() => import('../features/categories/retail/modules/sales/EWayBillPage.jsx'), 'EWayBillPage');
+const InvoicePage = lazyPage(() => import('../features/categories/retail/modules/sales/InvoicePage.jsx'), 'InvoicePage');
+const PurchaseEntryPage = lazyPage(() => import('../features/categories/retail/modules/sales/PurchaseEntryPage.jsx'), 'PurchaseEntryPage');
+const PurchaseOrderPage = lazyPage(() => import('../features/categories/retail/modules/sales/PurchaseOrderPage.jsx'), 'PurchaseOrderPage');
+const QuotationPage = lazyPage(() => import('../features/categories/retail/modules/sales/QuotationPage.jsx'), 'QuotationPage');
+const ReceivablesPage = lazyPage(() => import('../features/categories/retail/modules/sales/ReceivablesPage.jsx'), 'ReceivablesPage');
+const SalesReturnPage = lazyPage(() => import('../features/categories/retail/modules/sales/SalesReturnPage.jsx'), 'SalesReturnPage');
+const SupplierReturnPage = lazyPage(() => import('../features/categories/retail/modules/sales/SupplierReturnPage.jsx'), 'SupplierReturnPage');
+const PharmacyBillListPage = lazyPage(() => import('../features/categories/hospital/modules/pharmacy/PharmacyBillListPage.jsx'), 'PharmacyBillListPage');
+const CreateDocumentPage = lazyPage(() => import('../features/categories/retail/modules/sales/shared/CreateDocumentPage.jsx'), 'CreateDocumentPage');
+const InvoiceViewPage = lazyPage(() => import('../features/categories/retail/modules/sales/shared/InvoiceViewPage.jsx'), 'InvoiceViewPage');
+const DashboardPage = lazyPage(() => import('../pages/DashboardPage.jsx'), 'DashboardPage');
 
 export function InvoiceEditRoute({ documentType }) {
   const { id } = useParams();
@@ -41,6 +44,8 @@ export function GenericBillingRoute() {
   }
   return <DashboardPage />;
 }
+
+export const b2cBillingRoute = <CreateDocumentPage key="b2c-invoice" documentType="invoice" defaultBillingMode="b2c" />;
 
 export const billingRoutes = [
   { slug: 'invoice', documentType: 'invoice', list: <InvoicePage />, form: <CreateDocumentPage documentType="invoice" /> },

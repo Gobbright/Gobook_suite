@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-BWRPWl8p.js";var t=e();function n({month:e,onChange:n}){return(0,t.jsxs)(`label`,{className:`hr-month-filter`,children:[(0,t.jsx)(`span`,{children:`Month`}),(0,t.jsx)(`input`,{"aria-label":`Month`,className:`attendance-select`,type:`month`,required:!0,value:e,onChange:e=>{e.target.value&&n(e.target.value)}})]})}export{n as t};

@@ -1,0 +1,64 @@
+import fs from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import express from 'express';
+import mongoose from 'mongoose';
+import { gstRouter } from '../src/modules/retail/gst/routes.js';
+import { Invoice } from '../src/models/Invoice.js';
+import { seedGstDashboardFixture } from '../tests/fixtures/gstDashboardFixture.js';
+await mongoose.connect('mongodb://127.0.0.1:27031/?replicaSet=gstr3bQaRs', { dbName: 'gobook_gst_recon_browser_' + randomUUID().replaceAll('-', '') });
+const data = await seedGstDashboardFixture();
+await Invoice.collection.insertOne({ userId: data.owner, businessId: data.businessId, documentType: 'invoice', number: 'CLOSED-FY', lifecycleStatus: 'posted', meta: { date: '2025-11-05' }, items: [{ qty: 1, rate: 100, gstRate: 18, hsn: '8471' }] });
+for(const [number,rate] of [['P-300',300],['P-400',400],['P-500',500]])await Invoice.collection.insertOne({userId:data.owner,businessId:data.businessId,documentType:'purchase-entry',number,lifecycleStatus:'posted',meta:{date:'2026-11-03'},customer:{name:'Supplier A',gstin:'33AAAAA1111A1Z5'},items:[{qty:1,rate,gstRate:18}]});
+const csv='invoiceNo,gstin,supplier,date,taxable,gst\nBILL-SAME,33AAAAA1111A1Z5,Supplier A,2026-11-03,800,144\nBILL-SAME,33BBBBB2222B1Z5,Supplier B,2026-11-03,201,10\nP/300,33AAAAA1111A1Z5,Supplier A,2026-11-03,300,54\nP-400,33AAAAA1111A1Z5,Supplier A,2026-11-03,300,54\nPORTAL-ONLY,33AAAAA1111A1Z5,Supplier A,2026-11-03,600,108';
+const csvPath=new URL('./recon-import.csv',import.meta.url);await fs.writeFile(csvPath,csv);
+const app = express();app.use(express.json({limit:'6mb'}));
+app.use((req,res,next)=>{res.set('Access-Control-Allow-Origin','*');res.set('Access-Control-Allow-Headers','*');res.set('Access-Control-Allow-Methods','GET,POST,PUT,OPTIONS');if(req.method==='OPTIONS')return res.sendStatus(200);req.user=data.actor;next();});
+app.use('/api/gst',gstRouter);app.use((error,req,res,next)=>{console.error(error);res.status(error.statusCode||500).json({message:error.message});});
+const server=await new Promise(resolve=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
+const html=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/></head><body style="margin:0"><div id="root"></div><script type="module">
+import React from'react';import{createRoot}from'react-dom/client';import{MemoryRouter}from'react-router-dom';import{GstReconciliation}from'/src/features/categories/common/modules/gst/GstReconciliation.jsx';import'/src/index.css';
+const originalFetch=window.fetch;window.fetch=(url,options)=>{const address=new URL(url,location.href);if(address.pathname.includes('/gst/'))url='http://127.0.0.1:${server.address().port}'+address.pathname+address.search;return originalFetch(url,options)};
+const originalBlob=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{window.lastExport=blob;return originalBlob(blob)};window.print=()=>{window.printed=true};
+createRoot(document.getElementById('root')).render(React.createElement(MemoryRouter,null,React.createElement(GstReconciliation)));
+</script></body></html>`;
+const original=await fs.readFile(new URL('./check-b2c-application.mjs',import.meta.url),'utf8');let prefix=original.slice(0,original.indexOf('  const cases='));
+prefix=prefix.replace("const fixture=new URL('../../frontend/b2c-qa.html',import.meta.url);","const fixture=new URL('../../frontend/gst-recon-workflow-qa.html',import.meta.url);");
+prefix=prefix.slice(0,prefix.indexOf('const html='))+'const html='+JSON.stringify(html)+';\n'+prefix.slice(prefix.indexOf('await fs.writeFile(fixture,html);'));
+prefix=prefix.replaceAll('9337','9381').replaceAll('./b2c-chrome-profile','./gst-recon-workflow-profile');
+const checks=String.raw`
+  const button=text=>"Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==="+JSON.stringify(text)+")";
+  const click=async text=>{assert.equal(await evaluate(button(text)+'.disabled'),false,text+' enabled');await evaluate(button(text)+'.click()');};
+  const close=()=>evaluate('document.querySelector(\'[aria-label="Close dialog"]\').click()');
+  const loaded=()=>wait("document.querySelector('.agr-page')?.getAttribute('aria-busy')==='false' && document.body.innerText.includes('Stored GST Business')");
+  const note=async(text,label='Review explanation')=>{await evaluate("(()=>{const e=document.querySelector('[aria-label=\""+label+"\"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(text)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");};
+  const openRow=async(invoice,gstin='33AAAAA1111A1Z5')=>{await evaluate("Array.from(document.querySelectorAll('table[aria-label=\"Detailed reconciliation records\"] tbody tr')).find(row=>row.innerText.includes("+JSON.stringify(invoice)+")&&row.innerText.includes("+JSON.stringify(gstin)+")).querySelector('button').click()");await wait("!!document.querySelector('[role=dialog]')");};
+  await send('Emulation.setDeviceMetricsOverride',{width:1672,height:1050,deviceScaleFactor:1,mobile:false});
+  await send('Page.navigate',{url:'http://localhost:5173/gst-recon-workflow-qa.html'});await loaded();
+  assert.equal(await evaluate("document.querySelectorAll('.agr-stat').length"),8);assert.ok(await evaluate("!document.querySelector('.agr-sidebar')"));
+  await click('Import GSTR-2B');await wait("!!document.querySelector('[role=dialog]')");
+  const doc=await send('DOM.getDocument');const input=await send('DOM.querySelector',{nodeId:doc.root.nodeId,selector:'input[type=file]'});await send('DOM.setFileInputFiles',{nodeId:input.nodeId,files:[fileURLToPath(new URL('./recon-import.csv',import.meta.url))]});
+  await wait("!document.querySelector('[role=dialog]') && document.querySelector('[role=status]')?.innerText.includes('Import saved')");
+  for(let i=2;i<8;i++)assert.equal(await evaluate("document.querySelectorAll('.agr-stat strong')["+i+"].textContent"),'1','Category '+i);
+  for(const width of [1672,1366,1024,768,390]){await send('Emulation.setDeviceMetricsOverride',{width,height:1050,deviceScaleFactor:1,mobile:width<500});assert.ok(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'),'Overflow '+width);if(width===1672||width===390){const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});await fs.writeFile(new URL('./gst-recon-workflow-'+width+'.png',import.meta.url),Buffer.from(shot.data,'base64'));}}
+  await send('Emulation.setDeviceMetricsOverride',{width:1672,height:1050,deviceScaleFactor:1,mobile:false});
+  await openRow('BILL-SAME');await note('Checked invoice and supplier evidence');await click('Accept Match');await wait("!document.querySelector('[role=dialog]')");
+  await openRow('BILL-SAME');await note('ITC eligibility reviewed against supporting documents');await click('Mark ITC Eligible');await wait("!document.querySelector('[role=dialog]')");
+  await evaluate('window.reloadMarker=true');await send('Page.reload');await wait('!window.reloadMarker');await loaded();
+  await openRow('BILL-SAME');assert.ok(await evaluate("document.querySelector('[role=dialog]').innerText.includes('eligible') && document.querySelector('[role=dialog]').innerText.includes('accepted')"));await close();
+  await openRow('BILL-SAME','33BBBBB2222B1Z5');await note('Value discrepancy needs supplier correction');await click('Reject Match');await wait("!document.querySelector('[role=dialog]')");
+  await openRow('P-300');await note('Recheck the punctuation-normalized pairing');await click('Unlink Pair');await wait("!document.querySelector('[role=dialog]')");
+  await click('Manual Matching');await wait("!!document.querySelector('[aria-label=\"Books invoice\"]')");
+  await evaluate("document.querySelector('[aria-label=\"Books invoice\"]').click()");await wait("Array.from(document.querySelectorAll('button')).some(e=>e.textContent.includes('P-300 |'))");await evaluate("Array.from(document.querySelectorAll('button')).find(e=>e.textContent.includes('P-300 |')).click()");
+  await evaluate("document.querySelector('[aria-label=\"Statement invoice\"]').click()");await wait("Array.from(document.querySelectorAll('button')).some(e=>e.textContent.includes('P/300 |'))");await evaluate("Array.from(document.querySelectorAll('button')).find(e=>e.textContent.includes('P/300 |')).click()");await note('Invoice evidence confirms punctuation difference','Matching explanation');await click('Save Manual Match');await wait("!document.querySelector('[role=dialog]')");
+  await click('Run Auto Matching');await wait("document.querySelector('[role=status]')?.innerText.includes('Matching recalculated')");
+  await setInput('[aria-label="Search supplier GSTIN or invoice"]','PORTAL-ONLY');assert.equal(await evaluate("document.querySelectorAll('table[aria-label=\"Detailed reconciliation records\"] tbody tr').length"),1);await click('Clear Filters');
+  await setInput('[aria-label="Minimum difference amount"]','500');assert.ok(await evaluate("document.querySelector('table[aria-label=\"Detailed reconciliation records\"]').innerText.includes('PORTAL-ONLY')"));await click('Clear Filters');
+  await click('Export Report');const csv=await evaluate('window.lastExport.text()');assert.ok(csv.includes('statementTaxable')&&csv.includes('PORTAL-ONLY')&&csv.includes('eligibilityNote'));
+  await click('Resolution History');await wait("!!document.querySelector('.agr-import-history')");assert.ok(await evaluate("document.querySelector('.agr-import-history').innerText.includes('Invoice evidence confirms')"));await close();
+  await click('Sales Reconciliation (GSTR-1)');await loaded();await wait("document.body.innerText.includes('Total Sales (Books)')");assert.equal(await evaluate("document.querySelectorAll('.agr-stat').length"),8);await click('Import GSTR-1');await wait("!!document.querySelector('[role=dialog]')");await click('Use Saved GSTR-1');await wait("!document.querySelector('[role=dialog]')");assert.ok(await evaluate("document.body.innerText.includes('Saved GSTR-1')"));
+  assert.deepEqual(errors,[]);console.log('PASS reconciliation live API: all six match statuses, retained statement-only invoices, imports, reviewed eligibility, durable accept/reject, manual unlink/relink, auto matching, filters, export, history, sales workspace and five responsive widths');
+  await send('Browser.close').catch(()=>{});
+}finally{ws?.close();chrome.kill();await fs.unlink(fixture).catch(()=>{});}
+`;
+const runner=new URL('./gst-recon-workflow-run.mjs',import.meta.url);
+try{await fs.writeFile(runner,prefix+checks);await import(runner.href);}finally{await fs.unlink(runner).catch(()=>{});await fs.unlink(csvPath).catch(()=>{});await new Promise(resolve=>server.close(resolve));await mongoose.connection.dropDatabase();await mongoose.disconnect();}

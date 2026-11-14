@@ -2,13 +2,14 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import process from 'node:process'
+import { purchaseOcrAssets } from './scripts/purchaseOcrAssets.mjs'
 
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const apiUrl = env.VITE_API_URL?.trim()
   const googleClientId = env.VITE_GOOGLE_CLIENT_ID?.trim()
-  const backendOrigin = new URL(apiUrl || 'https://api.gobooksuite.com/api').origin
+  const backendOrigin = new URL(apiUrl || 'http://localhost:5000/api').origin
   const metaProxy = {
     '/auth/meta': { target: backendOrigin, changeOrigin: true },
     '/meta': { target: backendOrigin, changeOrigin: true },
@@ -20,7 +21,8 @@ export default defineConfig(({ command, mode }) => {
     throw new Error('Production build requires a valid VITE_GOOGLE_CLIENT_ID')
   }
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), purchaseOcrAssets()],
+    worker: { format: 'es' },
     server: { proxy: metaProxy },
     preview: { proxy: metaProxy },
   }

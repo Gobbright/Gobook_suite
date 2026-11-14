@@ -10,7 +10,6 @@ import {
   Undo2,
 } from 'lucide-react';
 
-import { api } from '../../../../../services/api.js';
 import { useModuleRecords } from '../../../shared/recordUi/useModuleRecords.js';
 import { todayISO } from '../../../shared/recordUi/dateUtils.js';
 
@@ -116,6 +115,7 @@ function Button({ children, icon: Icon, onClick, tone = 'white', disabled = fals
 }
 
 export function MedicineReturnsPage() {
+  const stockPostingKey = useRef(crypto.randomUUID());
   const pharmacyBills = useModuleRecords('hospital/pharmacy-billing');
   const returns = useModuleRecords('hospital/pharmacy-returns');
   const [search, setSearch] = useState('');
@@ -164,6 +164,7 @@ export function MedicineReturnsPage() {
 
   function startReturn(issue = selectedIssue) {
     if (!issue) return;
+    stockPostingKey.current = crypto.randomUUID();
     setSelectedIssueId(issue.id);
     setLines(issue.items.map((item, index) => {
       const sold = itemQty(item);
@@ -172,6 +173,7 @@ export function MedicineReturnsPage() {
       return {
         key: `${itemName(item)}-${itemBatch(item)}-${index}`,
         item,
+        originalLineIndex: index,
         medicine: itemName(item),
         sold,
         previouslyReturned,
@@ -199,15 +201,6 @@ export function MedicineReturnsPage() {
   const acceptableCondition = condition === 'Sealed / Unopened';
   const canProcess = selectedIssue && returnItems.length && reason && !nonReturnableItems.length && !overQtyItems.length && !batchMismatch;
 
-  async function restoreInventory(line) {
-    if (!acceptableCondition) return;
-    if (!line.item?.id) return;
-    await api.invUpdateProduct(line.item.id, {
-      ...(line.item.raw || line.item),
-      stock: Number(line.item.stock || 0) + Number(line.returnQty || 0),
-    });
-  }
-
   async function processReturn() {
     if (!canProcess) {
       window.alert('Resolve invoice, item, batch, quantity, return policy, and condition checks before processing.');
@@ -217,6 +210,7 @@ export function MedicineReturnsPage() {
     try {
       const status = acceptableCondition ? 'COMPLETED' : 'PENDING';
       const payload = {
+        inventoryPosting: { version: 1, key: stockPostingKey.current },
         returnId: nextReturnNo,
         invoiceNo: selectedIssue.invoiceNo,
         invoiceId: selectedIssue.id,
@@ -230,6 +224,7 @@ export function MedicineReturnsPage() {
         date: todayISO(),
         medicineSummary: returnItems.map((line) => line.medicine).join(', '),
         items: returnItems.map((line) => ({
+          originalLineIndex: line.originalLineIndex,
           medicine: line.medicine,
           soldQty: line.sold,
           previousReturnedQty: line.previouslyReturned,
@@ -248,10 +243,11 @@ export function MedicineReturnsPage() {
       };
 
       await returns.create(payload);
-      await Promise.all(returnItems.map(restoreInventory));
       setMessage(`${nextReturnNo} recorded. ${acceptableCondition ? 'Reusable stock restored.' : 'Marked for damaged/rejected review.'} Use Billing > Refunds for any patient refund.`);
       setShowForm(false);
       setLines([]);
+    } catch (error) {
+      window.alert(error.message || 'The return could not be saved.');
     } finally {
       setSaving(false);
     }

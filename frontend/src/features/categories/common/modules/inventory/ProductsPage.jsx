@@ -5,11 +5,13 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { StockSummaryPage } from './StockSummaryPage.jsx';
+import { ProductVariantRows } from './ProductVariantRows.jsx';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { Calendar, ChevronLeft, Clock, ClipboardList, IndianRupee, Info, Laptop, Package, Percent, ScanLine, ShieldCheck, Tag, User, Upload, Wrench } from 'lucide-react';
 
 import { api, SERVER_ORIGIN } from '../../../../../services/api.js';
+import { hasNewDuplicateVariants, productStockAdjustment, productHasVariants, singleProductVariants } from '../../../../../../../backend/src/utils/productVariants.js';
 import { formatCurrency } from '../../../../../utils/formatCurrency.js';
 import { SelectDropdown } from '../../../../../components/forms/SelectDropdown.jsx';
 import { HsnCodeInput } from '../../../../../components/forms/HsnCodeInput.jsx';
@@ -723,39 +725,6 @@ async function loadProductMasterBrandOptions() {
   return optionNames([...(Array.isArray(masterRows) ? masterRows : []), ...(Array.isArray(productRows) ? productRows : [])]);
 }
 
-const PURCHASE_VARIANT_SIZE_SUFFIXES = ['XXXL', 'XXL', 'XL', 'XS', 'L', 'M', 'S'];
-
-function inferPurchaseFashionVariant(product = {}, item = {}) {
-  const productName = String(product.description || '').trim();
-  let itemName = String(item.description || item.productName || item.name || '').trim();
-  let size = String(item.size || '').trim();
-  if (!size && productName && itemName.toLowerCase().startsWith(`${productName.toLowerCase()} `)) {
-    const suffix = itemName.slice(productName.length).trim();
-    if (suffix) size = suffix;
-  }
-  if (!size) {
-    const match = PURCHASE_VARIANT_SIZE_SUFFIXES.find((candidate) => itemName.toLowerCase().endsWith(` ${candidate.toLowerCase()}`));
-    if (match) size = match;
-  }
-  itemName = productName || itemName.replace(new RegExp(`\\s+(${PURCHASE_VARIANT_SIZE_SUFFIXES.join('|')})$`, 'i'), '').trim();
-  const brand = String(item.brand || '').trim();
-  const material = String(item.material || '').trim();
-  if (!itemName || (!size && !brand && !material)) return null;
-  return {
-    modelName: itemName,
-    size,
-    other: brand,
-    material,
-    barcode: String(item.barcode || '').trim(),
-    modelCode: '',
-    hsn: String(item.hsn || '').trim(),
-    stock: Number(item.qty) || 0,
-    unit: String(item.unit || product.unit || 'Nos').trim(),
-    rate: Number(item.rate) || Number(product.rate) || 0,
-    purchasePrice: Number(item.rate) || Number(product.purchasePrice) || 0,
-  };
-}
-
 function formatINR(v) { return '₹ ' + Number(v).toLocaleString('en-IN'); }
 
 function variantDisplayName(variant = {}) {
@@ -1087,11 +1056,13 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
             variants: [],
           }
         : initialProductType === 'Standard'
-          ? { productType: 'Standard', variants: [] }
+          ? { productType: 'Standard', variantMode: 'single', variants: [] }
           : {};
       return { ...defaultForm, ...initialTypeDefaults, code: nextCode ?? '', barcode: shouldStartAsService ? '' : initialBarcode || '' };
     }
     const initialGroup = isElectronicsRetail ? 'Electronics' : isFashionRetail ? 'Textile' : isFoodGroceryRetail || isHomeLivingRetail || isSpecialtyRetail ? 'General' : (itemGroups.includes(initial?.itemGroup) ? initial.itemGroup : 'General');
+    const hasVariants = productHasVariants(initial);
+    const singleRow = !hasVariants ? initial?.variants?.find(row => Number(row.stock) > 0) || initial?.variants?.[0] : null;
     return {
       ...defaultForm,
       ...initial,
@@ -1100,6 +1071,8 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
       supplierMappings: initial?.supplierMappings ?? [],
       branchSettings: initial?.branchSettings?.length ? initial.branchSettings : DEFAULT_BRANCH_SETTINGS.map((row) => ({ ...row })),
       variants: initial?.variants ?? [],
+      variantMode: hasVariants ? 'variants' : 'single',
+      barcode: initial?.barcode || singleRow?.barcode || '',
       itemGroup: initialGroup,
     };
   });
@@ -1118,7 +1091,7 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
   const isTextile = isRetail && !isService && form.itemGroup === 'Textile';
   const isElectronics = isRetail && !isService && (form.itemGroup === 'Electronics' || isElectronicsRetail);
   const genericGroupFields = !isService ? (GROUP_FIELDS[form.itemGroup] || []) : [];
-  const isMultiVariant = !isService && ((form.variants || []).length > 0 || (isSpecialtyRetail && form.productType === 'Matrix'));
+  const isMultiVariant = !isService && form.productType !== 'Bundle' && (form.variantMode === 'variants' || (form.variantMode !== 'single' && ((form.variants || []).length > 0 || (isSpecialtyRetail && form.productType === 'Matrix'))));
   const variantKind = isTextile ? 'size' : 'model';
   const variantTotalStock = (form.variants || []).reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
   const itemTypeLabel = isElectronicsRetail ? 'Entry Type *' : 'Item Type *';
@@ -1138,63 +1111,6 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
   const nameInputRef = useRef(null);
   const barcodeInputRef = useRef(null);
   const modalRef = useFocusTrap({ active: !pageMode, onClose, initialFocusRef: initialBarcode ? barcodeInputRef : nameInputRef });
-
-  useEffect(() => {
-    if (mode !== 'edit' || !isFashionRetail || isService || !initial?._id || (form.variants || []).length) return;
-    let active = true;
-    async function rebuildVariantsFromPurchases() {
-      try {
-        const res = await api.listInvoices({ documentType: 'purchase-entry', limit: 500 });
-        if (!active) return;
-        const docs = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
-        const productId = String(initial._id || initial.id || '');
-        const productName = String(initial.description || '').trim().toLowerCase();
-        const map = new Map();
-        docs.forEach((doc) => {
-          (doc.items || []).forEach((item) => {
-            const itemProductId = String(item.productId || item.product?._id || item.product?.id || '');
-            const itemName = String(item.description || '').trim().toLowerCase();
-            const matchesProduct = (productId && itemProductId === productId)
-              || (productName && (itemName === productName || itemName.startsWith(`${productName} `)));
-            if (!matchesProduct) return;
-            const row = inferPurchaseFashionVariant(initial, item);
-            if (!row) return;
-            const key = [row.modelName, row.other, row.size, row.material, row.barcode].map((part) => String(part || '').trim().toLowerCase()).join('|');
-            const current = map.get(key);
-            if (current) {
-              current.stock += Number(row.stock) || 0;
-              if (!current.rate && row.rate) current.rate = row.rate;
-              if (!current.purchasePrice && row.purchasePrice) current.purchasePrice = row.purchasePrice;
-            } else {
-              map.set(key, { ...row });
-            }
-          });
-        });
-        const rows = [...map.values()];
-        if (!rows.length) return;
-        setForm((prev) => {
-          if ((prev.variants || []).length) return prev;
-          const first = rows[0] || {};
-          return {
-            ...prev,
-            variants: rows,
-            productType: rows.length > 1 ? 'Matrix' : 'Standard',
-            brand: first.other || prev.brand || '',
-            size: first.size || prev.size || '',
-            material: first.material || prev.material || '',
-            fabric: first.material || prev.fabric || '',
-            stock: rows.reduce((sum, row) => sum + (Number(row.stock) || 0), 0),
-            rate: Number(prev.rate) > 0 ? prev.rate : first.rate || 0,
-            purchasePrice: Number(prev.purchasePrice) > 0 ? prev.purchasePrice : first.purchasePrice || 0,
-          };
-        });
-      } catch (error) {
-        console.warn('Unable to rebuild product variants from purchase entries', error);
-      }
-    }
-    rebuildVariantsFromPurchases();
-    return () => { active = false; };
-  }, [mode, isFashionRetail, isService, initial, form.variants]);
 
   useEffect(() => {
     if (!forceServiceMode || form.itemType === 'Service') return;
@@ -1277,6 +1193,7 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
   function enableMultiSize() {
     setForm((f) => ({
       ...f,
+      variantMode: 'variants',
       variants: (f.variants || []).length
         ? f.variants
         : [{
@@ -1301,7 +1218,7 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
   }
 
   function disableMultiSize() {
-    setForm((f) => ({ ...f, variants: [] }));
+    setForm((f) => ({ ...f, variantMode: 'single', variants: mode === 'edit' && !productHasVariants(initial) ? f.variants : [] }));
   }
 
   function selectStockMode(idx) {
@@ -1312,6 +1229,7 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
   function selectFoodGroceryVariantMode() {
     setForm((f) => ({
       ...f,
+      variantMode: 'variants',
       variants: (f.variants || []).length
         ? f.variants
         : [{
@@ -1348,6 +1266,7 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
   function selectHomeLivingVariantMode() {
     setForm((f) => ({
       ...f,
+      variantMode: 'variants',
       productType: 'Matrix',
       variantAttributes: (f.variantAttributes || []).length ? f.variantAttributes : ['size', 'colour'],
       variants: (f.variants || []).length
@@ -1359,6 +1278,7 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
   function selectSpecialtyPersonalVariantMode() {
     setForm((f) => ({
       ...f,
+      variantMode: 'variants',
       productType: 'Matrix',
       variantAttributes: (f.variantAttributes || []).length ? f.variantAttributes : defaultSpecialtyVariantAttributes,
       variants: f.variants || [],
@@ -1649,8 +1569,8 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
                   <input className={inputClass} placeholder="Enter unit" value={form.unit || 'Piece'} onChange={(e) => updateUnit(e.target.value)} />
                 </div>
                 <div>
-                  <label className={labelClass}>Opening Stock</label>
-                  <input className={`${inputClass} ${mode === 'edit' ? 'bg-[#f8fafc] text-[#94a3b8] cursor-not-allowed' : ''}`} type="number" min="0" value={form.stock} disabled={mode === 'edit'} onChange={(e) => set('stock', e.target.value)} />
+                  <label className={labelClass}>{mode === 'add' ? 'Opening Stock' : 'Current Stock'}</label>
+                  <input className={inputClass} type="number" min="0" value={form.stock} onChange={(e) => set('stock', e.target.value)} />
                 </div>
                 <div>
                   <label className={labelClass}>Low Stock Alert</label>
@@ -1813,8 +1733,8 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
                   <input className={inputClass} placeholder="Enter unit" value={form.unit || 'Piece'} onChange={(e) => updateUnit(e.target.value)} />
                 </div>
                 <div>
-                  <label className={labelClass}>Opening Stock</label>
-                  <input className={`${inputClass} ${mode === 'edit' ? 'bg-[#f8fafc] text-[#94a3b8] cursor-not-allowed' : ''}`} type="number" min="0" value={form.stock} disabled={mode === 'edit'} onChange={(e) => set('stock', e.target.value)} />
+                  <label className={labelClass}>{mode === 'add' ? 'Opening Stock' : 'Current Stock'}</label>
+                  <input className={inputClass} type="number" min="0" value={form.stock} onChange={(e) => set('stock', e.target.value)} />
                 </div>
                 <div>
                   <label className={labelClass}>Low Stock Alert</label>
@@ -2079,8 +1999,8 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
                 </div>
               </div>
               <div>
-                <label className={labelClass}>Opening Stock</label>
-                <input className={`${inputClass} ${mode === 'edit' ? 'bg-[#f8fafc] text-[#94a3b8] cursor-not-allowed' : ''}`} type="number" min="0" value={form.stock} disabled={mode === 'edit'} onChange={(e) => set('stock', e.target.value)} />
+                <label className={labelClass}>{mode === 'add' ? 'Opening Stock' : 'Current Stock'}</label>
+                <input className={inputClass} type="number" min="0" value={form.stock} onChange={(e) => set('stock', e.target.value)} />
               </div>
               <div className="grid grid-cols-1 gap-[13px] md:grid-cols-2">
                 <div>
@@ -2260,8 +2180,8 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
               </div>
               <div className="grid grid-cols-1 gap-[13px] md:grid-cols-2">
                 <div>
-                  <label className={labelClass}>Opening Stock</label>
-                  <input className={`${inputClass} ${mode === 'edit' ? 'bg-[#f8fafc] text-[#94a3b8] cursor-not-allowed' : ''}`} type="number" min="0" value={form.stock} disabled={mode === 'edit'} onChange={(e) => set('stock', e.target.value)} />
+                  <label className={labelClass}>{mode === 'add' ? 'Opening Stock' : 'Current Stock'}</label>
+                  <input className={inputClass} type="number" min="0" value={form.stock} onChange={(e) => set('stock', e.target.value)} />
                 </div>
                 <div>
                   <label className={labelClass}>Low Stock Alert</label>
@@ -2465,8 +2385,8 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
         <section className={sectionClass}>
           <div className={sectionTitleClass}>Stock Details</div>
           <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
-            <FieldBox label="Opening Stock">
-              <input className={`${inputClass} ${mode === 'edit' ? 'bg-[#f8fafc] text-[#94a3b8] cursor-not-allowed' : ''}`} type="number" min="0" step="0.01" value={form.stock} disabled={mode === 'edit'} onChange={(e) => set('stock', e.target.value)} />
+            <FieldBox label={mode === 'add' ? 'Opening Stock' : 'Current Stock'}>
+              <input className={inputClass} type="number" min="0" step="0.01" value={form.stock} onChange={(e) => set('stock', e.target.value)} />
             </FieldBox>
             <FieldBox label="Reorder Level">
               <input className={inputClass} type="number" min="0" step="0.01" value={form.reorderLevel || ''} onChange={(e) => { set('reorderLevel', e.target.value); set('minStockLevel', e.target.value); }} />
@@ -2759,7 +2679,7 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
               </div>
               <div className={rowClass}>
                 <label className={compactLabel}>{mode === 'add' ? 'Opening Stock' : 'Current Stock'}</label>
-                <input className={`${compactInput} ${mode === 'edit' ? 'bg-[#f8fafc] text-[#94a3b8] cursor-not-allowed' : ''}`} type="number" min="0" value={form.stock} disabled={mode === 'edit'} onChange={(e) => set('stock', e.target.value)} />
+                <input className={compactInput} type="number" min="0" value={form.stock} onChange={(e) => set('stock', e.target.value)} />
               </div>
               <div className={rowClass}>
                 <label className={compactLabel}>Low Stock Alert</label>
@@ -2944,7 +2864,7 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
                   <input className={compactInput} placeholder="Enter unit" value={form.unit || ''} onChange={(e) => updateUnit(e.target.value)} />
                 </FieldBox>
                 <FieldBox label={mode === 'add' ? 'Opening Stock' : 'Current Stock'}>
-                  <input className={`${compactInput} ${mode === 'edit' ? 'bg-[#f8fafc] text-[#94a3b8] cursor-not-allowed' : ''}`} type="number" min="0" value={form.stock} disabled={mode === 'edit'} onChange={(e) => set('stock', e.target.value)} />
+                  <input className={compactInput} type="number" min="0" value={form.stock} onChange={(e) => set('stock', e.target.value)} />
                 </FieldBox>
                 <FieldBox label="Low Stock Alert">
                   <input className={compactInput} type="number" min="0" value={form.minStockLevel} onChange={(e) => set('minStockLevel', e.target.value)} />
@@ -3070,18 +2990,20 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
         </section>
 
         <section className={`${cardClass} 2xl:col-span-3`}>
-          <div className={headingClass}><div><h3 className={titleClass}>Inventory controls</h3><p className="mb-0 mt-1 text-xs text-[#64748b]">Stock on hand is updated through purchases and adjustments.</p></div></div>
+          <div className={headingClass}><div><h3 className={titleClass}>Inventory controls</h3><p className="mb-0 mt-1 text-xs text-[#64748b]">Enter the quantity currently on hand. Saving a change records a stock adjustment.</p></div></div>
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 2xl:grid-cols-4">
-            <Field label="Current stock"><input className={`${framedInput} bg-slate-50 text-slate-600`} type="number" value={form.stock ?? 0} readOnly title="Manage stock through Purchase Entry or stock adjustments" /></Field>
+            <Field label="Current stock"><input className={framedInput} type="number" min="0" step="any" value={isMultiVariant ? variantTotalStock : form.stock ?? 0} readOnly={isMultiVariant} onChange={(e) => set('stock', e.target.value)} /></Field>
             <Field label="Warehouse"><input className={framedInput} placeholder="Main warehouse" value={form.warehouse || ''} onChange={(event) => set('warehouse', event.target.value)} /></Field>
             <Field label="Minimum stock"><input className={framedInput} type="number" min="0" value={form.minStockLevel ?? 0} onChange={(event) => set('minStockLevel', event.target.value)} /></Field>
             <Field label="Reorder level"><input className={framedInput} type="number" min="0" value={form.reorderLevel ?? 0} onChange={(event) => set('reorderLevel', event.target.value)} /></Field>
           </div>
-          <p className="mb-0 mt-3 text-xs text-[#64748b]">Manage quantities through <a href="/billing/purchase-entry/new" className="font-semibold text-blue-700 hover:underline">Purchase Entry</a> or stock adjustments.</p>
+          <p className="mb-0 mt-3 text-xs text-[#64748b]">For multiple models, edit each model quantity below. Total stock is calculated automatically.</p>
         </section>
         </div>
 
-        {isMultiVariant && <section className={`${cardClass} overflow-x-auto`}><h3 className={`${titleClass} mb-3`}>Model variants</h3><table className="w-full min-w-[800px] border-collapse text-[13px]"><thead><tr>{['Model / Variant', 'Code', 'Barcode', 'Stock', 'Purchase Price', 'MRP', 'Selling Price', 'Min Stock'].map((label) => <th key={label} className="border-b border-[#e5eaf2] bg-[#f5f8fc] px-3 py-2.5 text-left text-[11px] font-bold uppercase text-[#536173]">{label}</th>)}</tr></thead><tbody>{form.variants.map((variant, index) => <tr key={variant._id || index}>{['modelName', 'modelCode', 'barcode', 'stock', 'purchasePrice', 'mrp', 'rate', 'minStockLevel'].map((key) => <td key={key} className="border-b border-[#edf1f7] p-1"><input aria-label={`Variant ${index + 1} ${key}`} className={framedInput} type={['stock', 'purchasePrice', 'mrp', 'rate', 'minStockLevel'].includes(key) ? 'number' : 'text'} min={['stock', 'purchasePrice', 'mrp', 'rate', 'minStockLevel'].includes(key) ? '0' : undefined} step={['purchasePrice', 'mrp', 'rate'].includes(key) ? '0.01' : undefined} readOnly={key === 'stock'} value={variant[key] ?? ''} onChange={(event) => updateVariant(index, key, event.target.value)} /></td>)}</tr>)}</tbody></table></section>}
+        {isMultiVariant && <section className={cardClass}><h3 className={`${titleClass} mb-3`}>Model variants</h3>
+          <ProductVariantRows rows={form.variants} onChange={updateVariant} onRemove={removeVariant} />
+        </section>}
 
       </div>
     );
@@ -3708,6 +3630,10 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
                     <label className={compactLabel}>Variant SKU</label>
                     <input className={compactInput} value={variant.modelName || ''} onChange={(e) => setCompactVariant(idx, 'modelName', e.target.value)} />
                   </div>
+                  {variant.size && <div className={rowClass}>
+                    <label className={compactLabel}>Size / Model option</label>
+                    <input className={compactInput} value={variant.size} onChange={(e) => updateVariant(idx, 'size', e.target.value)} />
+                  </div>}
                   <div className={rowClass}>
                     <label className={compactLabel}>Barcode</label>
                     <div className="grid grid-cols-[minmax(0,1fr)_72px]">
@@ -4793,16 +4719,16 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
   }
 
   useEffect(() => {
-    if (!isElectronicsRetail) return;
+    if (!isElectronicsRetail || mode !== 'add' || isService || form.variantMode === 'single') return;
     setForm((prev) => (
       prev.itemGroup === 'Electronics' && prev.itemType === 'Product'
         ? prev
         : { ...prev, ...electronicsFormDefaults(), itemGroup: 'Electronics', itemType: 'Product' }
     ));
-  }, [isElectronicsRetail]);
+  }, [isElectronicsRetail, mode, isService]);
 
   useEffect(() => {
-    if (!isElectronicsRetail || mode !== 'add' || isService) return;
+    if (!isElectronicsRetail || mode !== 'add' || isService || form.variantMode === 'single') return;
     setForm((prev) => {
       const nextVariants = (prev.variants || []).length
         ? prev.variants
@@ -4814,43 +4740,43 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
         variants: nextVariants,
       };
     });
-  }, [isElectronicsRetail, mode, isService]);
+  }, [isElectronicsRetail, mode, isService, form.variantMode]);
 
   useEffect(() => {
-    if (!isFashionRetail) return;
+    if (!isFashionRetail || mode !== 'add' || isService) return;
     setForm((prev) => (
       prev.itemGroup === 'Textile' && prev.itemType === 'Product'
         ? prev
         : { ...prev, ...fashionFormDefaults(), itemGroup: 'Textile', itemType: 'Product' }
     ));
-  }, [isFashionRetail]);
+  }, [isFashionRetail, mode, isService]);
 
   useEffect(() => {
-    if (!isHomeLivingRetail) return;
+    if (!isHomeLivingRetail || mode !== 'add' || isService) return;
     setForm((prev) => (
       prev.category === 'Home & Living' && prev.itemType === 'Product'
         ? prev
         : { ...prev, ...homeLivingFormDefaults(), itemGroup: 'General', itemType: 'Product' }
     ));
-  }, [isHomeLivingRetail]);
+  }, [isHomeLivingRetail, mode, isService]);
 
   useEffect(() => {
-    if (!isSpecialtyPersonalRetail) return;
+    if (!isSpecialtyPersonalRetail || mode !== 'add' || isService) return;
     setForm((prev) => (
       prev.category === 'Specialty & Personal Needs' && prev.itemType === 'Product'
         ? prev
         : { ...prev, ...specialtyPersonalFormDefaults(), itemGroup: 'General', itemType: 'Product' }
     ));
-  }, [isSpecialtyPersonalRetail]);
+  }, [isSpecialtyPersonalRetail, mode, isService]);
 
   useEffect(() => {
-    if (!isBusinessSpecialtyRetail) return;
+    if (!isBusinessSpecialtyRetail || mode !== 'add' || isService) return;
     setForm((prev) => (
       prev.category === 'Business & Specialty Retail' && prev.itemType === 'Product'
         ? prev
         : { ...prev, ...businessSpecialtyFormDefaults(), itemGroup: 'General', itemType: 'Product' }
     ));
-  }, [isBusinessSpecialtyRetail]);
+  }, [isBusinessSpecialtyRetail, mode, isService]);
 
   useEffect(() => {
     if (!useFullScreenEditor) return;
@@ -4914,26 +4840,12 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
       if (bundleRows.some((row) => Number(row.qty) <= 0)) return setErr('Bundle item quantity must be more than 0');
       if (bundleRows.some((row) => Number(row.unitPrice) < 0)) return setErr('Bundle item price must be 0 or more');
     }
+    if (!isService && !isBundle && (!Number.isFinite(Number(form.stock)) || Number(form.stock) < 0)) return setErr('Stock quantity must be 0 or more');
     if (isMultiVariant) {
       const rows = variantRows;
       if (!rows.length) return setErr(`Add at least one ${variantKind} row`);
-      const keys = rows.map((v) => [
-        v.size,
-        v.modelName,
-        v.modelCode,
-        v.storage,
-        v.ram,
-        v.colour,
-        v.material,
-        v.pattern,
-        v.type,
-        v.quality,
-        v.ageGroup,
-        v.other,
-        v.barcode,
-      ].map((part) => String(part || '').trim().toLowerCase()).join('|'));
-      if (new Set(keys).size !== keys.length) return setErr(`${variantKind === 'size' ? 'Size' : 'Model'} names must be unique`);
-      if (rows.some((v) => Number(v.stock) < 0)) return setErr(`Stock quantity must be 0 or more for every ${variantKind}`);
+      if (hasNewDuplicateVariants(rows, mode === 'edit' ? initial?.variants || [] : [])) return setErr(`${variantKind === 'size' ? 'Size' : 'Model'} names and attributes must be unique`);
+      if (rows.some((v) => !Number.isFinite(Number(v.stock)) || Number(v.stock) < 0)) return setErr(`Stock quantity must be 0 or more for every ${variantKind}`);
       if (rows.some((v) => Number(v.rate) < 0)) return setErr(`Sale price must be 0 or more for every ${variantKind}`);
     }
     setSaving(true);
@@ -4947,14 +4859,17 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
         barcode: isService ? '' : String(form.barcode || genBarcode(form)).trim(),
         rate: baseRate,
         stock: isService || isBundle ? 0 : (isMultiVariant ? variantTotalStock : Number(form.stock)),
+        variantMode: isMultiVariant ? 'variants' : 'single',
         minStockLevel: isService ? 0 : Number(form.minStockLevel),
         variants: isMultiVariant
           ? form.variants
               .filter((v) => variantDisplayName(v))
               .map((v) => ({
+                ...(v._id ? { _id: String(v._id) } : {}),
                 size: String(v.size || '').trim(),
                 modelName: String(v.modelName || (isFashionRetail ? form.description : '') || '').trim(),
                 modelCode: String(v.modelCode || '').trim(),
+                length: String(v.length || '').trim(),
                 processor: String(v.processor || '').trim(),
                 ram: String(v.ram || '').trim(),
                 storage: String(v.storage || '').trim(),
@@ -4971,11 +4886,12 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
                 purchasePrice: Number(v.purchasePrice) || 0,
                 mrp: Number(v.mrp) || 0,
                 rate: Number(v.rate) || 0,
-                barcode: String(v.barcode || genBarcode({ ...form, ...v })).trim(),
+                barcode: String(v.barcode || (mode === 'edit' && v._id ? '' : genBarcode({ ...form, ...v }))).trim(),
                 stock: Number(v.stock) || 0,
                 minStockLevel: Number(v.minStockLevel) || 0,
               }))
-          : [],
+          : (mode === 'edit' && !isService && !isBundle && !productHasVariants(initial)
+            ? singleProductVariants(initial, Number(form.stock)) : []),
         bundleItems: isBundle
           ? (form.bundleItems || [])
               .filter((row) => String(row.productName || row.sku || '').trim())
@@ -5024,6 +4940,10 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
         collection: form.collection || '',
         pattern: form.pattern || '',
       };
+      if (mode === 'edit' && !isService && !isBundle) {
+        const adjustment = productStockAdjustment(initial, payload);
+        if (adjustment) payload.stockAdjustment = adjustment;
+      }
       const result = mode === 'add' ? await api.invCreateProduct(payload) : await api.invUpdateProduct(initial._id, payload);
       onSave(result, { keepOpen: saveAndNew });
       if (saveAndNew && mode === 'add') {
@@ -5102,6 +5022,11 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
           </div>
         </div>
         <form id="product-form" onSubmit={handleSubmit} className={pageMode ? 'flex flex-col' : 'flex flex-col flex-1 min-h-0'}>
+          {mode === 'edit' && !isService && form.productType !== 'Bundle' && (
+            <p className="m-0 border-b border-blue-100 bg-blue-50 px-4 py-2 text-[12px] text-blue-800">
+              {isMultiVariant ? 'Edit each model or size quantity, including 0. Total stock updates automatically.' : 'Edit Current Stock to the actual quantity on hand, including 0.'} Saving records a stock adjustment.
+            </p>
+          )}
           <div className="hidden">
             <div className="flex gap-1.5 overflow-x-auto pb-3">
               {PRODUCT_MASTER_TABS.map((tab) => (
@@ -5195,7 +5120,7 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
             <Section title="Inventory Configuration">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <ToggleField label="Track Inventory" checked={Boolean(form.trackInventory)} onChange={(v) => set('trackInventory', v)} />
-                <Field label={mode === 'add' ? 'Opening Stock' : 'Current Stock'}><input className={`${INPUT} ${mode === 'edit' ? 'bg-[#f8fafc] text-[#94a3b8] cursor-not-allowed' : ''}`} type="number" min="0" value={form.stock} disabled={mode === 'edit'} onChange={(e) => set('stock', e.target.value)} /></Field>
+                <Field label={mode === 'add' ? 'Opening Stock' : 'Current Stock'}><input className={INPUT} type="number" min="0" value={form.stock} onChange={(e) => set('stock', e.target.value)} /></Field>
                 <Field label="Opening Stock Value"><input className={INPUT} type="number" min="0" value={form.openingStockValue} onChange={(e) => set('openingStockValue', e.target.value)} /></Field>
                 <Field label="Reorder Level"><input className={INPUT} type="number" min="0" value={form.reorderLevel} onChange={(e) => set('reorderLevel', e.target.value)} /></Field>
                 <Field label="Minimum Stock"><input className={INPUT} type="number" min="0" value={form.minStockLevel} onChange={(e) => set('minStockLevel', e.target.value)} /></Field>
@@ -5216,7 +5141,7 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
                 <Field label="Expiry Alert Days"><input className={INPUT} type="number" min="0" value={form.expiryAlertDays} onChange={(e) => set('expiryAlertDays', e.target.value)} /></Field>
                 <Field label="Serial / IMEI Number"><input className={INPUT} value={form.serialNumber || ''} onChange={(e) => set('serialNumber', e.target.value)} /></Field>
               </div>
-              {!isService && isRetail && <div className="mb-3"><label className={LABEL}>Stock Tracking</label><div className={TOGGLE_WRAP} onKeyDown={(e) => handleToggleArrowKeys(e, selectStockMode)}><button type="button" className={toggleBtnClass(!isMultiVariant)} onClick={() => selectStockMode(0)}>{isTextile ? 'Single Size' : 'Single Model'}</button><button type="button" className={toggleBtnClass(isMultiVariant)} onClick={() => selectStockMode(1)}>{isTextile ? 'Multiple Sizes' : 'Multiple Models'}</button></div></div>}
+              {!isService && <div className="mb-3"><label className={LABEL}>Stock Tracking</label><div className={TOGGLE_WRAP} onKeyDown={(e) => handleToggleArrowKeys(e, selectStockMode)}><button type="button" className={toggleBtnClass(!isMultiVariant)} onClick={() => selectStockMode(0)}>{isTextile ? 'Single Size' : 'Single Model'}</button><button type="button" className={toggleBtnClass(isMultiVariant)} onClick={() => selectStockMode(1)}>{isTextile ? 'Multiple Sizes' : 'Multiple Models'}</button></div></div>}
               {!isService && isMultiVariant && (
                 <div className="flex flex-col gap-3">
                   <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-3">
@@ -5248,14 +5173,7 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
                     <span className="text-[12px] text-[#536173]">Total stock: {variantTotalStock}</span>
                   </div>
                   <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-1">
-                    {form.variants.map((v, idx) => (
-                      <div key={idx} className="grid grid-cols-[1fr_90px_110px_36px] gap-2">
-                        <input className={INPUT} value={isTextile ? (v.size || '') : (v.modelName || '')} onChange={(e) => updateVariant(idx, isTextile ? 'size' : 'modelName', e.target.value)} />
-                        <input className={INPUT} type="number" min="0" value={v.stock} onChange={(e) => updateVariant(idx, 'stock', e.target.value)} />
-                        <input className={INPUT} type="number" min="0" value={v.minStockLevel} onChange={(e) => updateVariant(idx, 'minStockLevel', e.target.value)} />
-                        <button type="button" className="w-9 h-9 rounded border border-[#dbe4ef] text-red-400 bg-white cursor-pointer" onClick={() => removeVariant(idx)}><TrashIcon /></button>
-                      </div>
-                    ))}
+                    <ProductVariantRows rows={form.variants} onChange={updateVariant} onRemove={removeVariant} isTextile={isTextile} />
                   </div>
                 </div>
               )}
@@ -5297,7 +5215,7 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
           ) : isAutomobile && !isService ? (
             renderAutomobileProductForm()
           ) : isFashionRetail && !isService ? (
-            renderGoFrugalFashionProductForm()
+            isMultiVariant ? renderGoFrugalFashionProductForm() : renderSingleFashionProductForm()
           ) : isElectronicsRetail && !isService ? (
             isBundleElectronicsProduct ? renderBundleElectronicsProductForm() : isSingleElectronicsProduct ? renderSingleElectronicsProductForm() : renderVariantElectronicsProductForm()
           ) : <div className={isElectronicsRetail && isService ? 'grid grid-cols-1 md:grid-cols-3 gap-3' : 'grid grid-cols-1 sm:grid-cols-2 gap-3'}>
@@ -5490,7 +5408,7 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
               <label className={LABEL}>GST Rate (%)</label>
               <input className={INPUT} inputMode="decimal" value={form.gstRate || ''} onChange={(e) => set('gstRate', e.target.value)} />
             </div>
-            {!isService && isRetail && (
+            {!isService && (
               <div className="sm:col-span-2">
                 <label className={LABEL}>Stock Tracking</label>
                 <div className={TOGGLE_WRAP} onKeyDown={(e) => handleToggleArrowKeys(e, selectStockMode)}>
@@ -5504,16 +5422,16 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
                 <div>
                   <label className={LABEL}>{mode === 'add' ? 'Opening Stock' : 'Current Stock'}</label>
                   <input
-                    className={`${INPUT} ${mode === 'edit' ? 'bg-[#f8fafc] text-[#94a3b8] cursor-not-allowed' : ''}`}
+                    className={INPUT}
                     type="number"
                     min="0"
                     value={form.stock}
-                    disabled={mode === 'edit'}
+
                     onChange={(e) => set('stock', e.target.value)}
                   />
                   {mode === 'edit' && (
                     <p className="text-[11px] text-[#94a3b8] mt-1">
-                      Set once as opening stock. Add more via <a href="/billing/purchase-entry/new" className="text-blue-600 hover:underline">Purchase Entry</a> or correct via <a href="/stock-in" className="text-blue-600 hover:underline">Stock In / Out</a>.
+                      Enter the actual quantity on hand, including 0. Saving records the difference as a stock adjustment.
                     </p>
                   )}
                 </div>
@@ -5545,24 +5463,12 @@ export function ProductModal({ mode, initial, nextCode, initialBarcode = '', ini
                   <span className="text-[12px] text-[#536173]">Total stock: {variantTotalStock}</span>
                 </div>
                 <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-1">
-                  {form.variants.map((v, idx) => (
-                    <div key={idx} className={`grid ${isTextile ? 'grid-cols-[1fr_90px_110px_36px]' : 'grid-cols-2 sm:grid-cols-[1.6fr_100px_90px_110px_36px]'} gap-2`}>
-                      <input className={INPUT} value={isTextile ? (v.size || '') : (v.modelName || '')} onChange={(e) => updateVariant(idx, isTextile ? 'size' : 'modelName', e.target.value)} />
-                      {!isTextile && (
-                        <input className={INPUT} type="number" min="0" step="0.01" value={v.rate ?? ''} onChange={(e) => updateVariant(idx, 'rate', e.target.value)} />
-                      )}
-                      <input className={INPUT} type="number" min="0" value={v.stock} onChange={(e) => updateVariant(idx, 'stock', e.target.value)} />
-                      <input className={INPUT} type="number" min="0" value={v.minStockLevel} onChange={(e) => updateVariant(idx, 'minStockLevel', e.target.value)} />
-                      <button type="button" onClick={() => removeVariant(idx)} className="w-9 h-9 flex items-center justify-center rounded hover:bg-red-50 text-red-400 bg-transparent border border-[#dbe4ef] cursor-pointer flex-none" title={`Remove ${variantKind}`}>
-                        <TrashIcon />
-                      </button>
-                    </div>
-                  ))}
+                  <ProductVariantRows rows={form.variants} onChange={updateVariant} onRemove={removeVariant} isTextile={isTextile} />
                 </div>
                 <button type="button" onClick={addVariantRow} className="mt-2 px-3 py-1.5 text-[12px] font-medium text-blue-600 bg-blue-50 border border-blue-100 rounded-md cursor-pointer hover:bg-blue-100 font-[inherit]">+ Add {isTextile ? 'Size' : 'Model'}</button>
                 {mode === 'edit' && (
                   <p className="text-[11px] text-[#94a3b8] mt-2">
-                    Quantities are set once as opening stock. Add more via <a href="/billing/purchase-entry/new" className="text-blue-600 hover:underline">Purchase Entry</a> or correct via <a href="/stock-in" className="text-blue-600 hover:underline">Stock In / Out</a>.
+                    Edit each model quantity, including 0. Saving records the difference as a stock adjustment.
                   </p>
                 )}
               </div>

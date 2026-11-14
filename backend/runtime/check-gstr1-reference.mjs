@@ -1,0 +1,84 @@
+﻿import fs from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import express from 'express';
+import mongoose from 'mongoose';
+import { getGstr1 } from '../src/modules/retail/gst/gstr1Controller.js';
+import { seedGstDashboardFixture } from '../tests/fixtures/gstDashboardFixture.js';
+import { Gstr1 } from '../src/models/Gstr1.js';
+import { Invoice } from '../src/models/Invoice.js';
+import { BusinessSettings } from '../src/models/BusinessSettings.js';
+const dbName='gobook_gst_gstr1_ui_'+randomUUID().replaceAll('-','');
+await mongoose.connect('mongodb://127.0.0.1:27029',{dbName});
+const data=await seedGstDashboardFixture();
+await Gstr1.deleteMany({userId:data.owner,period:data.period});
+await Invoice.collection.insertMany(Array.from({length:11},(_,i)=>({_id:new mongoose.Types.ObjectId(),userId:data.owner,businessId:data.businessId,documentType:'invoice',branch:i%2?'North':'South',number:'GSTR1-UI-'+String(i+1).padStart(3,'0'),lifecycleStatus:'posted',meta:{date:'2026-11-05'},customer:{name:'Recorded Customer '+(i+1),gstin:'33AAAAA0000A1Z5',state:'Tamil Nadu'},items:[{description:'Recorded product',qty:1,rate:1000+i*100,gstRate:18,hsn:'8471'}],createdAt:new Date('2026-11-05T10:00:00Z')})));
+const app=express(),requests=[];
+app.use((req,res,next)=>{res.set('Access-Control-Allow-Origin','*');res.set('Access-Control-Allow-Headers','*');if(req.method==='OPTIONS')return res.sendStatus(200);req.user=data.actor;next();});
+app.get('/api/gst/gstr1',(req,res,next)=>{requests.push(req.query.period);return getGstr1(req,res,next);});
+app.get('/api/settings',async(req,res)=>res.json(await BusinessSettings.findOne({userId:data.owner}).lean()));
+app.use((error,req,res,next)=>res.status(500).json({message:error.message}));
+const server=await new Promise(resolve=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
+const html=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/></head><body style="margin:0"><div id="root"></div><script type="module">
+import React from'react';import{createRoot}from'react-dom/client';import{MemoryRouter}from'react-router-dom';import{Gstr1Page}from'/src/features/categories/common/modules/gst/Gstr1Page.jsx';import'/src/index.css';
+const originalFetch=window.fetch;window.fetch=(url,options)=>{const address=new URL(url,location.href);if(address.pathname.endsWith('/gst/gstr1'))url='http://127.0.0.1:${server.address().port}/api/gst/gstr1'+address.search;if(address.pathname.endsWith('/settings'))url='http://127.0.0.1:${server.address().port}/api/settings';return originalFetch(url,options)};
+const originalBlob=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{window.lastExport=blob;return originalBlob(blob)};
+createRoot(document.getElementById('root')).render(React.createElement(MemoryRouter,{initialEntries:['/gstr-1?period=November%202026']},React.createElement(Gstr1Page)));
+</script></body></html>`;
+const original=await fs.readFile(new URL('./check-b2c-application.mjs',import.meta.url),'utf8');
+let prefix=original.slice(0,original.indexOf('  const cases='));
+prefix=prefix.replace("const fixture=new URL('../../frontend/b2c-qa.html',import.meta.url);","const fixture=new URL('../../frontend/gstr1-reference-qa.html',import.meta.url);");
+prefix=prefix.slice(0,prefix.indexOf('const html='))+'const html='+JSON.stringify(html)+';\n'+prefix.slice(prefix.indexOf('await fs.writeFile(fixture,html);'));
+prefix=prefix.replaceAll('9337','9355').replaceAll('./b2c-chrome-profile','./gstr1-reference-profile');
+const checks=`
+  const click=async text=>evaluate("Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==="+JSON.stringify(text)+").click()");
+  await send('Emulation.setDeviceMetricsOverride',{width:1672,height:1000,deviceScaleFactor:1,mobile:false});
+  await send('Page.navigate',{url:'http://localhost:5173/gstr1-reference-qa.html'});
+  await wait("document.querySelector('.ag1-page')?.getAttribute('aria-busy')==='false' && document.body.innerText.includes('Stored GST Business')");
+  assert.equal(await evaluate("document.querySelectorAll('.ag1-stat').length"),5);
+  assert.equal(await evaluate("document.querySelectorAll('.ag1-section-tile').length"),8);
+  assert.equal(await evaluate("document.querySelectorAll('.ag1-list tbody tr').length"),10);
+  assert.equal(await evaluate("document.querySelector('.ag1-stat:nth-child(4) strong').textContent"),'13');
+  assert.ok(await evaluate("!document.querySelector('.ag1-sidebar') && !document.querySelector('[aria-label=\\\"GST navigation\\\"]')"));
+  for(const width of [1672,1366,1024,768,390]){
+    await send('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:width<500});
+    assert.ok(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'),'Overflow at '+width);
+    if(width===1672||width===390){const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});await fs.writeFile(new URL('./gstr1-reference-'+width+'.png',import.meta.url),Buffer.from(shot.data,'base64'));}
+  }
+  await send('Emulation.setDeviceMetricsOverride',{width:1672,height:1000,deviceScaleFactor:1,mobile:false});
+  await evaluate("document.querySelector('[aria-label=\\\"Next page\\\"]').click()");
+  await wait("document.querySelectorAll('.ag1-list tbody tr').length===2");
+  await evaluate("document.querySelector('[aria-label=\\\"Previous page\\\"]').click()");
+  await setInput('[aria-label="Search GSTR-1 records"]','GSTR1-UI-001');
+  await wait("document.querySelectorAll('.ag1-list tbody tr').length===1 && document.querySelector('.ag1-list tbody').innerText.includes('GSTR1-UI-001')");
+  await evaluate("document.querySelector('.ag1-list tbody input').click()");
+  await evaluate("document.querySelector('[aria-label=\\\"Export current section\\\"]').click()");await wait('!!window.lastExport');
+  const csv=await evaluate('window.lastExport.text()');assert.ok(csv.includes('GSTR1-UI-001') && !csv.includes('GSTR1-UI-002'));
+  await evaluate("document.querySelector('.ag1-invoice-link').click()");await wait("!!document.querySelector('[role=dialog]')");
+  assert.ok(await evaluate("document.querySelector('[role=dialog]').innerText.includes('Recorded Customer 1')"));
+  await evaluate("document.querySelector('[aria-label=\\\"Close dialog\\\"]').click()");
+  await setInput('[aria-label="Search GSTR-1 records"]','');
+  await click('Filters');await wait("!!document.querySelector('.ag1-filters')");
+  await evaluate("document.querySelector('[aria-label=\\\"Branch\\\"]').click()");await wait("!!document.querySelector('.ag1-dropdown-menu button')");
+  await evaluate("Array.from(document.querySelectorAll('.ag1-dropdown-menu button')).find(e=>e.textContent.trim()==='North').click()");
+  await wait("document.querySelectorAll('.ag1-list tbody tr').length===5");await click('Clear Filters');
+  await click('Generate Summary');await wait("!!document.querySelector('.ag1-summary-view')");
+  await click('Detail View');await wait("!!document.querySelector('.ag1-list table')");
+  await click('Validate Data');await wait("document.querySelector('.ag1-list-heading h2').textContent.includes('Validation')");
+  assert.ok(await evaluate("document.querySelector('.ag1-notice').innerText.includes('Local validation complete')"));
+  await evaluate("Array.from(document.querySelectorAll('.ag1-section-tile')).find(e=>e.innerText.includes('HSN Summary')).click()");
+  await wait("document.querySelector('.ag1-list thead').innerText.includes('HSN / SAC')");
+  await click('Preview Return');await wait("document.querySelector('[role=dialog]')?.innerText.includes('GSTR-1 Preview')");
+  await evaluate("document.querySelector('[aria-label=\\\"Close dialog\\\"]').click()");
+  await click('Prepare GSTR-1 Export');await wait("document.querySelector('[role=dialog]')?.innerText.includes('Download Review JSON')");
+  await click('Download Review JSON');const exported=await evaluate('window.lastExport.text()');assert.equal(JSON.parse(exported).documents.length,14);
+  await evaluate("document.querySelector('[aria-label=\\\"Close dialog\\\"]').click()");
+  await click('Filing History');assert.ok(await evaluate("document.querySelector('.ag1-history').innerText.includes('No filed return saved')"));
+  await evaluate("document.querySelector('[aria-label=\\\"Tax Period\\\"]').click()");await wait("!!document.querySelector('.ag1-dropdown-menu button')");
+  await evaluate("Array.from(document.querySelectorAll('.ag1-dropdown-menu button')).find(e=>e.textContent.includes('Apr 2026')).click()");
+  await wait("document.querySelector('.ag1-page').getAttribute('aria-busy')==='false' && document.querySelector('.ag1-stat strong').textContent.includes('0.00')");
+  assert.deepEqual(errors,[]);console.log('PASS GSTR-1 reference layout, real API values, five responsive widths, search, filters, pagination, selections, document preview, summary, validation, HSN, CSV/JSON export and empty month');
+  await send('Browser.close').catch(()=>{});
+}finally{ws?.close();chrome.kill();await fs.unlink(fixture).catch(()=>{});}
+`;
+const runner=new URL('./gstr1-reference-run.mjs',import.meta.url);
+try{await fs.writeFile(runner,prefix+checks);await import(runner.href);console.log('PASS '+requests.length+' GSTR-1 API requests');}finally{await fs.unlink(runner).catch(()=>{});await new Promise(resolve=>server.close(resolve));await mongoose.connection.dropDatabase();await mongoose.disconnect();}

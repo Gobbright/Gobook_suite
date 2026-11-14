@@ -7,6 +7,7 @@ import { api } from '../../../../../services/api.js';
 import { formatCurrency } from '../../../../../utils/formatCurrency.js';
 import { SelectDropdown } from '../../../../../components/forms/SelectDropdown.jsx';
 import { AutocompleteInput } from '../../../../../components/forms/AutocompleteInput.jsx';
+import { ProductModal } from '../../../common/modules/inventory/ProductsPage.jsx';
 
 const TH = 'text-left text-xs font-semibold uppercase tracking-wide text-[#536173] px-5 py-3 border-b border-[#edf2f7]';
 const TD = 'px-5 py-3.5 border-b border-[#f3f4f6] text-[13px]';
@@ -100,7 +101,12 @@ const UploadIcon = () => (
   </svg>
 );
 
-function MedicineModal({ mode, initial, nextCode, initialBarcode = '', categories, onSave, onClose }) {
+export function MedicineModal(props) {
+  if (props.mode === 'edit') return <ProductModal {...props} brands={[]} sizes={[]} fabrics={[]} colours={[]} types={[]} />;
+  return <MedicineEntryModal {...props} />;
+}
+
+function MedicineEntryModal({ mode, initial, nextCode, initialBarcode = '', categories, onSave, onClose }) {
   const [form, setForm] = useState(() => {
     if (mode === 'add') return { ...EMPTY_FORM, code: nextCode ?? '', barcode: initialBarcode || '' };
     return initial ?? EMPTY_FORM;

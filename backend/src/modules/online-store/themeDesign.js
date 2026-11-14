@@ -1,4 +1,5 @@
-export const TEMPLATE_NAMES = ['boutique', 'marketplace', 'premium'];
+import { normalizeBuilderDesign } from './builderDesign.js';
+export const TEMPLATE_NAMES = ['boutique', 'marketplace', 'premium', 'aurora', 'goldenhue'];
 
 export function normalizeThemeDesign(input = {}, fallback = {}) {
   const source = { ...fallback, ...input };
@@ -37,5 +38,5 @@ export function normalizeThemeDesign(input = {}, fallback = {}) {
     }
   }
   for (const key of ['showHero', 'showBenefits', 'showFooter']) result[key] = typeof source[key] === 'boolean' ? source[key] : true;
-  return result;
+  return { ...result, ...normalizeBuilderDesign(source) };
 }

@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-BWRPWl8p.js";import{t}from"./BookReport-BZ95is0L.js";var n=e();function r(){return(0,n.jsx)(t,{bankBook:!0})}export{r as BankBookPage};

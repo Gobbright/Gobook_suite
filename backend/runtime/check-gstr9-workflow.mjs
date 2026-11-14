@@ -1,0 +1,60 @@
+import fs from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import express from 'express';
+import mongoose from 'mongoose';
+import { gstRouter } from '../src/modules/retail/gst/routes.js';
+import { Invoice } from '../src/models/Invoice.js';
+import { seedGstDashboardFixture } from '../tests/fixtures/gstDashboardFixture.js';
+await mongoose.connect('mongodb://127.0.0.1:27031/?replicaSet=gstr3bQaRs', { dbName: 'gobook_gst_9_workflow_' + randomUUID().replaceAll('-', '') });
+const data = await seedGstDashboardFixture();
+await Invoice.collection.insertOne({ userId: data.owner, businessId: data.businessId, documentType: 'invoice', number: 'CLOSED-FY', lifecycleStatus: 'posted', meta: { date: '2025-11-05' }, items: [{ qty: 1, rate: 100, gstRate: 18, hsn: '8471' }] });
+const app = express();app.use(express.json());
+app.use((req,res,next)=>{res.set('Access-Control-Allow-Origin','*');res.set('Access-Control-Allow-Headers','*');res.set('Access-Control-Allow-Methods','GET,POST,PUT,OPTIONS');if(req.method==='OPTIONS')return res.sendStatus(200);req.user=data.actor;next();});
+app.use('/api/gst',gstRouter);app.use((error,req,res,next)=>{console.error(error);res.status(error.statusCode||500).json({message:error.message});});
+const server=await new Promise(resolve=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
+const html=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/></head><body style="margin:0"><div id="root"></div><script type="module">
+import React from'react';import{createRoot}from'react-dom/client';import{MemoryRouter}from'react-router-dom';import{Gstr9Page}from'/src/features/categories/common/modules/gst/Gstr9Page.jsx';import'/src/index.css';
+const originalFetch=window.fetch;window.fetch=(url,options)=>{const address=new URL(url,location.href);if(address.pathname.includes('/gst/'))url='http://127.0.0.1:${server.address().port}'+address.pathname+address.search;return originalFetch(url,options)};
+const originalBlob=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{window.lastExport=blob;return originalBlob(blob)};window.print=()=>{window.printed=true};
+createRoot(document.getElementById('root')).render(React.createElement(MemoryRouter,null,React.createElement(Gstr9Page)));
+</script></body></html>`;
+const original=await fs.readFile(new URL('./check-b2c-application.mjs',import.meta.url),'utf8');let prefix=original.slice(0,original.indexOf('  const cases='));
+prefix=prefix.replace("const fixture=new URL('../../frontend/b2c-qa.html',import.meta.url);","const fixture=new URL('../../frontend/gstr9-workflow-qa.html',import.meta.url);");
+prefix=prefix.slice(0,prefix.indexOf('const html='))+'const html='+JSON.stringify(html)+';\n'+prefix.slice(prefix.indexOf('await fs.writeFile(fixture,html);'));
+prefix=prefix.replaceAll('9337','9377').replaceAll('./b2c-chrome-profile','./gstr9-workflow-profile');
+const checks=String.raw`
+  const button=text=>"Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==="+JSON.stringify(text)+")";
+  const click=async text=>{assert.equal(await evaluate(button(text)+'.disabled'),false,text+' enabled');await evaluate(button(text)+'.click()');};
+  const close=()=>evaluate('document.querySelector(\'[aria-label="Close dialog"]\').click()');
+  const loaded=()=>wait("document.querySelector('.ag9-page')?.getAttribute('aria-busy')==='false' && document.body.innerText.includes('Stored GST Business')");
+  const amount=index=>evaluate("Number(document.querySelectorAll('.ag9-stat strong')["+index+"].textContent.replace(/[^0-9.]/g,''))");
+  await send('Emulation.setDeviceMetricsOverride',{width:1672,height:1050,deviceScaleFactor:1,mobile:false});
+  await send('Page.navigate',{url:'http://localhost:5173/gstr9-workflow-qa.html'});await loaded();
+  assert.equal(await amount(0),8700);assert.equal(await amount(1),1447);assert.equal(await amount(2),154);
+  assert.ok(await evaluate("document.querySelectorAll('.ag9-stat strong')[3].textContent.includes('Not recorded')"));
+  assert.equal(await evaluate("document.querySelectorAll('.ag9-return-sections tbody tr').length"),6);
+  assert.ok(await evaluate("!document.querySelector('.ag9-sidebar')"));
+  for(const width of [1672,1366,1024,768,390]){await send('Emulation.setDeviceMetricsOverride',{width,height:1050,deviceScaleFactor:1,mobile:width<500});assert.ok(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'),'Overflow '+width);if(width===1672||width===390){const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});await fs.writeFile(new URL('./gstr9-workflow-'+width+'.png',import.meta.url),Buffer.from(shot.data,'base64'));}}
+  await send('Emulation.setDeviceMetricsOverride',{width:1672,height:1050,deviceScaleFactor:1,mobile:false});
+  await click('Basic Details');await wait("!!document.querySelector('[role=dialog]')");assert.ok(await evaluate("document.querySelector('[role=dialog]').innerText.includes('33AABCG1234M1ZP')"));await close();
+  await click('Calculate Annual Summary');await wait("document.querySelector('[role=alert]')?.innerText.includes('Validate the current')");await click('Dismiss');
+  await click('Add Adjustment / Payment');await wait("!!document.querySelector('.ag9-adjustment-form')");await setInput('[aria-label="Adjustment reference"]','ANNUAL-UI-1');
+  await evaluate("(()=>{const e=document.querySelector('[aria-label=\"Adjustment explanation\"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'Annual review correction not already in books');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await setInput('[aria-label="Adjustment taxable"]','100');await setInput('[aria-label="Adjustment cgst"]','9');await setInput('[aria-label="Adjustment sgst"]','9');await click('Add to Draft');await wait("!document.querySelector('[role=dialog]')");
+  await click('Import Books Data');await wait("document.querySelector('[role=status]')?.innerText.includes('Your edits have been kept')");
+  await click('Save as Draft *');await wait("document.querySelector('[role=status]')?.innerText.includes('Annual draft saved')");assert.equal(await amount(0),8800);assert.equal(await amount(1),1465);
+  await click('Validate Return');await wait("document.querySelector('[role=status]')?.innerText.includes('Annual data validated')");
+  await evaluate("document.querySelector('.ag9-validation input[type=checkbox]').click()");await click('Calculate Annual Summary');await wait("document.querySelector('[role=status]')?.innerText.includes('Annual summary saved')");assert.ok(await evaluate("document.querySelectorAll('.ag9-progress li')[2].classList.contains('complete')"));
+  await evaluate('window.reloadMarker=true');await send('Page.reload');await wait('!window.reloadMarker');await loaded();assert.equal(await amount(0),8800);assert.ok(await evaluate("document.querySelectorAll('.ag9-progress li')[2].classList.contains('complete')"));
+  await click('Books vs Returns');await wait("!!document.querySelector('table[aria-label=\"Monthly return coverage\"]')");assert.ok(await evaluate("document.querySelector('table[aria-label=\"Monthly return coverage\"]').innerText.includes('unverified')"));
+  await click('Preview GSTR-9');await wait("!!document.querySelector('.ag9-preview')");await click('Print Annual Preview');assert.equal(await evaluate('window.printed'),true);await click('Download Review JSON');const review=JSON.parse(await evaluate('window.lastExport.text()'));assert.equal(review.overview.turnover,8800);assert.equal(review.adjustments.length,1);assert.equal(review.overview.taxPaid,null);await close();
+  await click('File GSTR-9');await wait("!!document.querySelector('[aria-label=\"Portal ARN\"]')");await evaluate('window.portalCalls=[];window.open=(...args)=>{window.portalCalls.push(args);return null;}');await click('Open GST Portal');assert.equal(await evaluate('window.portalCalls[0][0]'),'https://services.gst.gov.in/services/login');await close();
+  await evaluate("document.querySelector('[aria-label=\"Financial Year\"]').click()");await wait("!!document.querySelector('.ag9-dropdown-menu button')");await evaluate("Array.from(document.querySelectorAll('.ag9-dropdown-menu button')).find(e=>e.textContent.includes('2025-26')).click()");await wait("document.querySelector('.ag9-page').getAttribute('aria-busy')==='false' && document.querySelector('.ag9-stat strong').textContent.replace(/[^0-9.]/g,'')==='100.00'");
+  await click('Save as Draft');await wait("document.querySelector('[role=status]')?.innerText.includes('Annual draft saved')");await click('Validate Return');await wait("document.querySelector('[role=status]')?.innerText.includes('Annual data validated')");await evaluate("document.querySelector('.ag9-validation input[type=checkbox]').click()");await click('Calculate Annual Summary');await wait("document.querySelector('[role=status]')?.innerText.includes('Annual summary saved')");
+  await click('File GSTR-9');await wait("!!document.querySelector('[aria-label=\"Portal ARN\"]')");await setInput('[aria-label="Portal ARN"]','AA1234567890123');await setInput('[aria-label="Filing date"]','2026-11-10');await evaluate("document.querySelector('.ag9-dialog input[type=checkbox]').click()");await click('Record External Filing');await wait("document.querySelector('.ag9-status-badge')?.innerText==='Filed Record'");assert.ok(await evaluate("document.body.innerText.includes('AA1234567890123')"));assert.equal(await evaluate(button('Save as Draft')+'.disabled'),true);
+  assert.deepEqual(errors,[]);console.log('PASS GSTR-9 real API: six parts, scoped sources, adjustments, persistent workflow, coverage, preview/export, portal handoff, acknowledgement lock and five responsive widths');
+  await send('Browser.close').catch(()=>{});
+}finally{ws?.close();chrome.kill();await fs.unlink(fixture).catch(()=>{});}
+`;
+const runner=new URL('./gstr9-workflow-run.mjs',import.meta.url);
+try{await fs.writeFile(runner,prefix+checks);await import(runner.href);}finally{await fs.unlink(runner).catch(()=>{});await new Promise(resolve=>server.close(resolve));await mongoose.connection.dropDatabase();await mongoose.disconnect();}

@@ -1,4 +1,4 @@
-const DEFAULT_API_URL = 'https://api.gobooksuite.com/api';
+const DEFAULT_API_URL = 'http://localhost:5000/api';
 
 function normalizeApiUrl(url) {
   let parsed;

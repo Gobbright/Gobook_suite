@@ -1,10 +1,12 @@
-import { BatchExpiryPage } from './BatchExpiryPage.jsx';
-import { MedicinesPage } from './MedicinesPage.jsx';
-import { MedicineDispensingPage } from './MedicineDispensingPage.jsx';
-import { MedicineReturnsPage } from './MedicineReturnsPage.jsx';
-import { PharmacyStockPage } from './PharmacyStockPage.jsx';
-import { ExpiryAlertsPage } from './ExpiryAlertsPage.jsx';
-import { SuppliersPage } from './SuppliersPage.jsx';
+import { lazyPage } from '../../../../../routes/lazyPage.jsx';
+
+const BatchExpiryPage = lazyPage(() => import('./BatchExpiryPage.jsx'), 'BatchExpiryPage');
+const MedicinesPage = lazyPage(() => import('./MedicinesPage.jsx'), 'MedicinesPage');
+const MedicineDispensingPage = lazyPage(() => import('./MedicineDispensingPage.jsx'), 'MedicineDispensingPage');
+const MedicineReturnsPage = lazyPage(() => import('./MedicineReturnsPage.jsx'), 'MedicineReturnsPage');
+const PharmacyStockPage = lazyPage(() => import('./PharmacyStockPage.jsx'), 'PharmacyStockPage');
+const ExpiryAlertsPage = lazyPage(() => import('./ExpiryAlertsPage.jsx'), 'ExpiryAlertsPage');
+const SuppliersPage = lazyPage(() => import('./SuppliersPage.jsx'), 'SuppliersPage');
 
 export const pharmacyRoutes = [
   { path: '/hospital/medicine-dispensing', element: <MedicineDispensingPage /> },

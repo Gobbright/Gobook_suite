@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-sLPvdpSW.js";import{t}from"./RowActionsMenu-DgQd237p.js";var n=e();function r({onEdit:e,onDelete:r}){let i=[...e?[{value:`edit`,label:`Edit`}]:[],...r?[{value:`delete`,label:`Delete`}]:[]];return i.length?(0,n.jsx)(t,{options:i,onChange:t=>(t===`edit`?e:r)?.()}):null}export{r as t};

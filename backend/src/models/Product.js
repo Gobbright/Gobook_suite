@@ -73,6 +73,7 @@ const productSchema = new Schema({
   productDescription: { type: String, default: '' },
   itemType:      { type: String, enum: ['Product', 'Service'], default: 'Product', index: true },
   productType:   { type: String, trim: true, default: 'Standard' },
+  variantMode:   { type: String, enum: ['', 'single', 'variants'], default: '' },
   serviceType:   { type: String, trim: true, default: '' },
   estimatedTime: { type: String, trim: true, default: '' },
   technician:    { type: String, trim: true, default: '' },

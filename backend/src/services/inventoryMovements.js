@@ -6,6 +6,7 @@ import { assertUnreservedInventory } from './inventoryReservations.js';
 import { assertLocationInventory } from './inventoryAvailability.js';
 import { isFinanciallyActive } from './salesLifecycle.js';
 import { inventoryTransaction } from './inventoryTransaction.js';
+import { productVariantKey, productHasVariants } from '../utils/productVariants.js';
 
 import { BusinessSettings } from '../models/BusinessSettings.js';
 import { Product } from '../models/Product.js';
@@ -212,6 +213,18 @@ const extraVariantFields = ['ram', 'storage', 'processor', 'display', 'graphics'
 const extraVariantAttrs = (item) => Object.fromEntries(extraVariantFields.map((field) => [field, clean(item[field] || item.variant?.[field])]));
 const variantAttributeKey = (field, value) => ['ram', 'storage'].includes(field) ? clean(value).toLowerCase().replace(/\s/g, '') : clean(value).toLowerCase();
 
+function unambiguousVariant(matches, product) {
+  if (matches.length <= 1) return matches[0] || null;
+  // Legacy purchase imports could leave an empty duplicate with the same
+  // barcode. Reuse the one stocked row, without merging IDs used by bills.
+  if (new Set(matches.map(productVariantKey)).size === 1) {
+    const stocked = matches.filter((variant) => Number(variant.stock) > 0);
+    if (stocked.length === 1) return stocked[0];
+    if (!stocked.length) return [...matches].sort((a, b) => String(a._id).localeCompare(String(b._id)))[0];
+  }
+  throw httpError(400, `Multiple inventory variants match ${product.description}. Select the exact variant or scan its unique barcode.`);
+}
+
 function findProductVariant(product, value, attrs = {}) {
   const variants = product?.variants ?? [];
   if (attrs.variantId) {
@@ -222,15 +235,13 @@ function findProductVariant(product, value, attrs = {}) {
   const barcode = clean(attrs.barcode);
   if (barcode) {
     const scanned = variants.filter((variant) => clean(variant.barcode) === barcode);
-    if (scanned.length > 1) throw httpError(400, `Multiple inventory variants match ${product.description}. Select a unique variant.`);
-    if (scanned.length === 1) return scanned[0];
+    if (scanned.length) return unambiguousVariant(scanned, product);
   }
   const name = clean(value);
   const modelCode = clean(attrs.modelCode).toLowerCase();
   if (modelCode) {
     const byCode = variants.filter((variant) => clean(variant.modelCode).toLowerCase() === modelCode);
-    if (byCode.length > 1) throw httpError(400, `Multiple inventory variants match ${product.description}. Select a unique variant.`);
-    if (byCode.length === 1) return byCode[0];
+    if (byCode.length) return unambiguousVariant(byCode, product);
   }
   const brand = clean(attrs.brand).toLowerCase();
   const material = clean(attrs.material).toLowerCase();
@@ -238,7 +249,12 @@ function findProductVariant(product, value, attrs = {}) {
   const length = clean(attrs.length).toLowerCase();
   const type = clean(attrs.type).toLowerCase();
   const extraFields = extraVariantFields.filter((field) => clean(attrs[field]));
-  if (!name && !brand && !material && !colour && !type && !extraFields.length) return null;
+  if (!name && !brand && !material && !colour && !type && !length && !extraFields.length) {
+    if (barcode || modelCode) return null;
+    if (variants.length === 1) return variants[0];
+    if (variants.length && new Set(variants.map(productVariantKey)).size === 1) return unambiguousVariant(variants, product);
+    return null;
+  }
   const normalizedName = name.toLowerCase();
   const attributed = variants.filter((variant) => (
     (!brand || clean(variant.other).toLowerCase() === brand)
@@ -250,8 +266,7 @@ function findProductVariant(product, value, attrs = {}) {
     && extraFields.every((field) => variantAttributeKey(field, variant[field]) === variantAttributeKey(field, attrs[field])));
   const exact = name ? candidates.filter((variant) => clean(variantDisplayName(variant)).toLowerCase() === normalizedName) : [];
   const matches = exact.length ? exact : candidates.filter((variant) => !name || clean(variantName(variant)).toLowerCase() === normalizedName);
-  if (matches.length > 1) throw httpError(400, `Multiple inventory variants match ${product.description}. Select the exact variant or scan its barcode.`);
-  return matches[0] || null;
+  return unambiguousVariant(matches, product);
 }
 
 function itemHasVariantAttrs(item = {}, { itemGroup = '' } = {}) {
@@ -306,7 +321,7 @@ async function addMissingProductVariantFromItem(product, item, qty = 0, { genera
   const itemSize = clean(item.size || item.modelName || item.modelNumber || item.variant?.size || item.variant?.modelName);
   const itemBrand = clean(item.brand || item.other || item.variantBrand || item.variant?.other || item.variant?.brand);
   const itemMaterial = clean(item.material || item.fabric || item.variantMaterial || item.variant?.material || item.variant?.fabric);
-  const attrs = { ...extraVariantAttrs(item), brand: itemBrand, material: itemMaterial, colour: item.colour, type: item.type, modelCode: item.modelCode, length: item.length };
+  const attrs = { ...extraVariantAttrs(item), brand: itemBrand, material: itemMaterial, colour: item.colour, type: item.type, modelCode: item.modelCode, length: item.length, barcode: item.barcode || item.variant?.barcode, variantId: item.variantId || item.variant?._id };
   const existing = findProductVariant(product, itemSize, attrs);
   if (existing) {
     await ensureProductBrands(product.userId, product, item, existing);
@@ -334,11 +349,13 @@ async function addMissingProductVariantFromItem(product, item, qty = 0, { genera
 
   const variant = buildVariantFromItem(item, qty, { generateMissingBarcode });
   if (generateMissingBarcode && !clean(item.barcode || item.variant?.barcode)) variant.barcode = unusedVariantBarcode(variant.barcode, product);
+  const variantMode = productHasVariants({ ...plain(product), variantMode: '', variants: [...(product.variants || []), variant] }) ? 'variants' : 'single';
   await Product.updateOne(
     { _id: product._id },
     {
       $set: {
         itemGroup: product.itemGroup === 'General' ? itemGroup : product.itemGroup,
+        variantMode,
         ...(itemGroup === 'Textile' ? { productType: 'Matrix' } : {}),
         brand: product.brand || variant.other,
         size: product.size || variant.size,
@@ -511,7 +528,7 @@ async function collectMovableItems(invoice, userId, { generatePurchaseBarcodes =
       await Product.updateOne({ _id: product._id }, { $set: { barcode } });
       product = await Product.findById(product._id) || product;
     }
-    if (product.variants?.length && !matchedVariant && inventoryMode(invoice.documentType) === 'out') {
+    if (product.variants?.length && !matchedVariant && inventoryMode(invoice.documentType)) {
       throw httpError(400, `Select a valid inventory variant for ${product.description}`);
     }
     rows.push({
@@ -528,7 +545,7 @@ async function collectMovableItems(invoice, userId, { generatePurchaseBarcodes =
         ? Math.max(0, Number(item.rate || 0) * qty - (item.discountType === 'amount' ? Number(item.discount || 0) : Number(item.rate || 0) * qty * Number(item.discount || 0) / 100)) / converted.quantity
         : Number(product.purchasePrice || 0),
       description: clean(item.description || product.description),
-      variantName: matchedVariant ? variantDisplayName(matchedVariant) : itemVariantName,
+      variantName: matchedVariant ? variantDisplayName(matchedVariant) : '',
       variantBrand: itemVariantBrand,
       variantMaterial: itemVariantMaterial,
       variantId: matchedVariant?._id,
@@ -594,7 +611,11 @@ async function applyRows(rows, direction, { allowNegative = false } = {}) {
     const variant = row.variantId
       ? row.product.variants?.find((value) => String(value._id) === String(row.variantId))
       : findProductVariant(row.product, row.variantName, { brand: row.variantBrand, material: row.variantMaterial });
-    if ((row.variantId || row.variantName) && !variant) throw httpError(409, `Inventory variant is missing for ${row.product.description}`);
+    // Legacy movements may have neither a variant ID nor a name. Never
+    // reverse only the parent when there are multiple possible model rows.
+    if ((row.product.variants?.length || row.variantId || row.variantName) && !variant) {
+      throw httpError(409, `Inventory variant is missing for ${row.product.description}. This bill needs its original model reference before it can change stock. Use Edit Product to correct quantities separately.`);
+    }
     if (variant) {
       const key = String(variant._id);
       const entry = group.variants.get(key) || { variant, qty: 0 };

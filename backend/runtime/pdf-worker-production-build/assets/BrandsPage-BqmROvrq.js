@@ -1,0 +1,1 @@
+import{t as e}from"./BrandsPage-BK1U-YdI.js";export{e as BrandsPage};

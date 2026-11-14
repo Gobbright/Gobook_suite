@@ -17,7 +17,7 @@ const layoutSchema = new Schema({
 const responsiveLayoutSchema = new Schema({ desktop: layoutSchema, tablet: layoutSchema, mobile: layoutSchema }, { _id: false });
 
 const themeSchema = new Schema({
-  name: { type: String, enum: ['boutique', 'marketplace', 'premium'], default: 'boutique' },
+  name: { type: String, enum: ['boutique', 'marketplace', 'premium', 'aurora', 'goldenhue'], default: 'boutique' },
   primaryColor: { type: String, trim: true, default: '#2563eb' },
   logoUrl: { type: String, trim: true, default: '' },
   bannerImageUrl: { type: String, trim: true, default: '' },
@@ -35,6 +35,13 @@ const themeSchema = new Schema({
   bannerFit: { type: String, enum: ['cover', 'contain'], default: 'cover' },
   bannerPosition: { type: String, enum: ['center', 'top', 'bottom', 'left', 'right'], default: 'center' },
   sectionStyles: { header: responsiveLayoutSchema, hero: responsiveLayoutSchema, products: responsiveLayoutSchema, benefits: responsiveLayoutSchema, footer: responsiveLayoutSchema },
+  pageStyles: { type: Schema.Types.Mixed, default: () => ({}) },
+  pageContent: { type: Schema.Types.Mixed, default: () => ({}) },
+  pageVisibility: { type: Schema.Types.Mixed, default: () => ({}) },
+  deviceContent: { type: Schema.Types.Mixed, default: () => ({}) },
+  sectionOrder: { type: Schema.Types.Mixed, default: () => ({}) },
+  responsiveOrder: { type: Schema.Types.Mixed, default: () => ({}) },
+  blocks: { type: [Schema.Types.Mixed], default: () => [] },
 }, { _id: false });
 
 const onlineStoreSettingsSchema = new Schema({
@@ -53,6 +60,8 @@ const onlineStoreSettingsSchema = new Schema({
     boutique: { type: themeSchema, default: undefined },
     marketplace: { type: themeSchema, default: undefined },
     premium: { type: themeSchema, default: undefined },
+    aurora: { type: themeSchema, default: undefined },
+    goldenhue: { type: themeSchema, default: undefined },
   },
 }, { timestamps: true });
 

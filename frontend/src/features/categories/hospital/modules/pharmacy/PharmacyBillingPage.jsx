@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Barcode,
   CalendarDays,
@@ -26,6 +26,7 @@ import {
 import { useKeyboardMode } from '../../../../../app/KeyboardModeContext.jsx';
 import { api, SERVER_ORIGIN } from '../../../../../services/api.js';
 import { useModuleRecords } from '../../../shared/recordUi/useModuleRecords.js';
+import { productInventoryOptions } from '../../../../../../../backend/src/utils/productVariants.js';
 
 const INPUT = 'border border-[#dbe4ef] rounded-md px-3 py-2 text-[13px] text-[#111827] w-full outline-none focus:border-blue-500 font-[inherit] bg-white';
 const PAYMENT_METHODS = ['Cash', 'UPI', 'Card'];
@@ -76,7 +77,8 @@ function phoneOf(data = {}) {
 
 function normalizeMedicine(product = {}) {
   return {
-    id: product._id || product.id,
+    id: product.optionId || product._id || product.id,
+    productId: product.productId || product._id || product.id, variantId: product.variantId,
     name: product.description || product.name || product.productName || 'Unnamed Medicine',
     code: product.code || '',
     barcode: product.barcode || '',
@@ -139,6 +141,8 @@ function Button({ children, onClick, tone = 'white', disabled = false, className
 }
 
 export function PharmacyBillingPage() {
+  const stockPostingKey = useRef(crypto.randomUUID());
+  const paying = useRef(false);
   const { keyboardMode } = useKeyboardMode();
   const patients = useModuleRecords('hospital/patients');
   const prescriptions = useModuleRecords('hospital/prescription');
@@ -216,7 +220,7 @@ export function PharmacyBillingPage() {
     setMedicineLoading(true);
     setMedicineError('');
     api.invListProducts({ page: 1, limit: 500, itemType: 'Product' })
-      .then((res) => setMedicines(productRows(res).map(normalizeMedicine)))
+      .then((res) => setMedicines(productRows(res).flatMap(productInventoryOptions).map(normalizeMedicine)))
       .catch((err) => {
         setMedicines([]);
         setMedicineError(err.message || 'Failed to load inventory products.');
@@ -313,6 +317,7 @@ export function PharmacyBillingPage() {
   }
 
   function clearBill() {
+    stockPostingKey.current = crypto.randomUUID();
     setItems([]);
     setDiscount(0);
     setPrescription('');
@@ -397,58 +402,58 @@ export function PharmacyBillingPage() {
           phone: phoneOf(selectedPatient.data),
         };
 
-    await pharmacyBills.create({
-      billNo,
-      customer,
-      patientName: customer.name,
-      patientId: customer.patientId || '',
-      prescription,
-      items,
-      subtotal,
-      discount: Number(discount || 0),
-      gst,
-      total,
-      paymentMethod,
-      businessSnapshot: bizSettings,
-      status: 'Paid',
-      date: new Date().toISOString().slice(0, 10),
-      workflow: 'Patient/Walk-in -> Prescription/Medicine Search -> Batch -> Qty -> Stock Validation -> Payment -> Invoice -> Dispense -> Inventory Deduction',
-      name: `Pharmacy Bill ${billNo}`,
-      amount: total,
-    });
+    if (paying.current) return;
+    paying.current = true;
+    try {
+      await pharmacyBills.create({
+        inventoryPosting: { version: 1, key: stockPostingKey.current },
+        billNo,
+        customer,
+        patientName: customer.name,
+        patientId: customer.patientId || '',
+        prescription,
+        items,
+        subtotal,
+        discount: Number(discount || 0),
+        gst,
+        total,
+        paymentMethod,
+        businessSnapshot: bizSettings,
+        status: 'Paid',
+        date: new Date().toISOString().slice(0, 10),
+        workflow: 'Patient/Walk-in -> Prescription/Medicine Search -> Batch -> Qty -> Stock Validation -> Payment -> Invoice -> Dispense -> Inventory Deduction',
+        name: `Pharmacy Bill ${billNo}`,
+        amount: total,
+      });
 
-    await payments.create({
-      receiptNo: nextReceiptNo,
-      invoiceNo: billNo,
-      invoiceSource: 'hospital/pharmacy-billing',
-      patientName: customer.name,
-      mobile: customer.phone || '',
-      method: paymentMethod,
-      amount: total,
-      referenceNo: '',
-      cashier: 'Cashier',
-      status: 'Completed',
-      date: new Date().toISOString().slice(0, 10),
-      accountingStatus: 'Pending',
-      name: `Receipt ${nextReceiptNo}`,
-    });
+      await payments.create({
+        receiptNo: nextReceiptNo,
+        invoiceNo: billNo,
+        invoiceSource: 'hospital/pharmacy-billing',
+        patientName: customer.name,
+        mobile: customer.phone || '',
+        method: paymentMethod,
+        amount: total,
+        referenceNo: '',
+        cashier: 'Cashier',
+        status: 'Completed',
+        date: new Date().toISOString().slice(0, 10),
+        accountingStatus: 'Pending',
+        name: `Receipt ${nextReceiptNo}`,
+      });
 
-    await Promise.all(items.map((item) => {
-      const nextStock = Math.max(0, Number(item.stock || 0) - Number(item.qty || 0));
-      return api.invUpdateProduct(item.id, { ...item.raw, stock: nextStock });
-    }));
-
-    setMedicines((current) => current.map((medicine) => {
-      const sold = items.find((item) => item.id === medicine.id);
-      if (!sold) return medicine;
-      return { ...medicine, stock: Math.max(0, Number(medicine.stock || 0) - Number(sold.qty || 0)) };
-    }));
-    setMessage(`Payment collected. ${billNo} printed and inventory deducted.`);
-    clearBill();
-    setPatientSearch('');
-    setSelectedPatientId('');
-    setWalkIn(false);
-    setPreviewOpen(false);
+      clearBill();
+      setMessage(`Payment collected. ${billNo} saved and inventory deducted.`);
+      api.invListProducts({ page: 1, limit: 500, itemType: 'Product' })
+        .then(res => setMedicines(productRows(res).flatMap(productInventoryOptions).map(normalizeMedicine)))
+        .catch(() => { setMedicines([]); setMedicineError('Bill saved. Refresh to load current stock.'); });
+      setPatientSearch('');
+      setSelectedPatientId('');
+      setWalkIn(false);
+      setPreviewOpen(false);
+    } catch (error) {
+      window.alert(error.message || 'The bill could not be completed. Check saved bills before retrying.');
+    } finally { paying.current = false; }
   }
 
   return (

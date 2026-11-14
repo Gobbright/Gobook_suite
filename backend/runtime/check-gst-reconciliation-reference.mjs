@@ -1,0 +1,72 @@
+import fs from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import express from 'express';
+import mongoose from 'mongoose';
+import { gstRouter } from '../src/modules/retail/gst/routes.js';
+import { BusinessSettings } from '../src/models/BusinessSettings.js';
+import { Invoice } from '../src/models/Invoice.js';
+import { GstReconciliation } from '../src/models/GstReconciliation.js';
+import { seedGstDashboardFixture } from '../tests/fixtures/gstDashboardFixture.js';
+await mongoose.connect('mongodb://127.0.0.1:27035', { dbName: 'gobook_gst_recon_ui_' + randomUUID().replaceAll('-', '') });
+const data = await seedGstDashboardFixture();
+await Invoice.collection.insertMany(Array.from({ length: 12 }, (_, index) => { const i = index + 1; return { userId: data.owner, businessId: data.businessId, documentType: 'purchase-entry', number: 'UI-BOOK-' + String(i).padStart(3, '0'), branch: i % 2 ? 'HQ' : 'North', lifecycleStatus: 'posted', meta: { date: '2026-11-05' }, extra: { vendorInvoiceNo: 'UI-P-' + String(i).padStart(3, '0') }, customer: { name: i % 2 ? 'Supplier A' : 'Supplier B', gstin: i % 2 ? '33AAAAA1111A1Z5' : '33BBBBB2222B1Z5' }, items: [{ qty: 1, rate: 1000 + i * 100, gstRate: 18, hsn: '8471' }] }; }));
+await GstReconciliation.updateOne({ userId: data.owner, period: data.period }, { $push: { entries: { $each: Array.from({ length: 8 }, (_, index) => { const i = index + 1; return { invoiceNo: 'UI-P-' + String(i).padStart(3, '0'), gstin: i % 2 ? '33AAAAA1111A1Z5' : '33BBBBB2222B1Z5', itcGstr2b: (1000 + i * 100) * .18 - (i > 4 ? 1 : 0), statementRecorded: true }; }) } } });
+const app = express(), requests = [];
+app.use(express.json());
+app.use((req, res, next) => { res.set('Access-Control-Allow-Origin', '*'); res.set('Access-Control-Allow-Headers', '*'); res.set('Access-Control-Allow-Methods', 'GET,PUT,POST,OPTIONS'); if (req.method === 'OPTIONS') return res.sendStatus(200); req.user = data.actor; requests.push(req.method + ' ' + req.path); next(); });
+app.use('/api/gst', gstRouter);
+app.get('/api/settings', async (req, res) => res.json(await BusinessSettings.findOne({ userId: data.owner }).lean()));
+app.use((error, req, res, next) => res.status(error.statusCode || 500).json({ message: error.message }));
+const server = await new Promise(resolve => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
+const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/></head><body style="margin:0"><div id="root"></div><script type="module">
+import React from'react';import{createRoot}from'react-dom/client';import{MemoryRouter}from'react-router-dom';import{GstReconciliation}from'/src/features/categories/common/modules/gst/GstReconciliation.jsx';import'/src/index.css';
+const originalFetch=window.fetch;window.fetch=(url,options)=>{const address=new URL(url,location.href);if(address.pathname.includes('/gst/')||address.pathname.endsWith('/settings'))url='http://127.0.0.1:${server.address().port}'+address.pathname+address.search;return originalFetch(url,options)};
+const originalBlob=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{window.lastExport=blob;return originalBlob(blob)};
+createRoot(document.getElementById('root')).render(React.createElement(MemoryRouter,{initialEntries:['/gst-reconciliation?period=November%202026']},React.createElement(GstReconciliation)));
+</script></body></html>`;
+const original = await fs.readFile(new URL('./check-b2c-application.mjs', import.meta.url), 'utf8');
+let prefix = original.slice(0, original.indexOf('  const cases='));
+prefix = prefix.replace("const fixture=new URL('../../frontend/b2c-qa.html',import.meta.url);", "const fixture=new URL('../../frontend/gst-recon-reference-qa.html',import.meta.url);");
+prefix = prefix.slice(0, prefix.indexOf('const html=')) + 'const html=' + JSON.stringify(html) + ';\n' + prefix.slice(prefix.indexOf('await fs.writeFile(fixture,html);'));
+prefix = prefix.replaceAll('9337', '9373').replaceAll('./b2c-chrome-profile', './gst-recon-reference-profile');
+const checks = String.raw`
+  const button = text => "Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==="+JSON.stringify(text)+")";
+  const click = async text => {assert.equal(await evaluate(button(text)+'.disabled'),false,text+' should be enabled');await evaluate(button(text)+'.click()');};
+  const close = () => evaluate('document.querySelector(\'[aria-label="Close dialog"]\').click()');
+  const loaded = () => wait("document.querySelector('.agr-page')?.getAttribute('aria-busy')==='false' && document.body.innerText.includes('Stored GST Business')");
+  const rows = () => evaluate("document.querySelectorAll('.agr-list tbody tr').length");
+  const dropdown = async (label, option) => {await evaluate('document.querySelector(\'[aria-label="'+label+'"]\').click()');await wait("!!document.querySelector('.agr-dropdown-menu button')");await evaluate("Array.from(document.querySelectorAll('.agr-dropdown-menu button')).find(e=>e.textContent.trim()==="+JSON.stringify(option)+").click()");};
+  await send('Emulation.setDeviceMetricsOverride',{width:1672,height:1000,deviceScaleFactor:1,mobile:false});
+  await send('Page.navigate',{url:'http://localhost:5173/gst-recon-reference-qa.html'});await loaded();
+  assert.equal(await evaluate("document.querySelectorAll('.agr-stat').length"),8);assert.equal(await rows(),13);
+  assert.equal(await evaluate("document.querySelector('.agr-stat:nth-child(3) strong').textContent"),'5');
+  assert.ok(await evaluate("!document.querySelector('.agr-sidebar') && !document.querySelector('[aria-label=\"GST navigation\"]')"));
+  for(const width of [1672,1366,1024,768,390]){await send('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:width<500});assert.ok(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'),'Overflow at '+width);if(width===1672||width===390){const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});await fs.writeFile(new URL('./gst-reconciliation-reference-'+width+'.png',import.meta.url),Buffer.from(shot.data,'base64'));}}
+  await send('Emulation.setDeviceMetricsOverride',{width:1672,height:1000,deviceScaleFactor:1,mobile:false});
+  await click('ITC Matched (5)');assert.equal(await rows(),5);await click('All Records (13)');
+  await setInput('[aria-label="Search invoice or vendor"]','UI-P-001');assert.equal(await rows(),1);await click('UI-P-001');await wait("!!document.querySelector('[role=dialog]')");
+  await setInput('[aria-label="Statement total ITC"]','0');await click('Apply ITC Amount');await click('Save Review *');await wait("document.querySelector('.agr-notice')?.innerText.includes('review saved')");
+  await evaluate('window.reloadMarker=true');await send('Page.reload');await wait('!window.reloadMarker');await loaded();
+  assert.equal(await evaluate("document.querySelector('.agr-stat:nth-child(3) strong').textContent"),'4');
+  await setInput('[aria-label="Search invoice or vendor"]','UI-P-001');await click('UI-P-001');await wait("!!document.querySelector('[role=dialog]')");assert.ok(await evaluate("document.querySelector('[role=dialog]').innerText.includes('₹0.00')"));await click('Mark Reviewed');await click('Save Review *');await wait("document.querySelector('.agr-notice')?.innerText.includes('review saved')");
+  await dropdown('Review Status','Reviewed');assert.equal(await rows(),1);await click('Clear Filters');
+  await dropdown('Branch','North');assert.equal(await rows(),6);await click('Clear Filters');
+  await click('Import GSTR-2B');await wait("!!document.querySelector('[role=dialog]')");await click('Download Template');assert.ok((await evaluate('window.lastExport.text()')).startsWith('invoiceNo,gstin,itcGstr2b'));
+  await evaluate("(()=>{const input=document.querySelector('input[type=file]'),transfer=new DataTransfer();transfer.items.add(new File(['invoiceNo,gstin,itcGstr2b,period\\nUI-P-009,33AAAAA1111A1Z5,342,November 2026'.replaceAll('\\\\n','\\n')],'statement.csv',{type:'text/csv'}));input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await wait("document.querySelector('.agr-notice')?.innerText.includes('1 statement ITC amount(s) loaded')");
+  await click('Run Auto Matching');await click('Save Review *');await wait("document.querySelector('.agr-notice')?.innerText.includes('review saved')");
+  await click('Import History (1)');await wait("document.querySelector('[role=dialog]')?.innerText.includes('statement.csv')");await close();
+  await click('Export Report');const report=await evaluate('window.lastExport.text()');assert.ok(report.includes('UI-P-009')&&report.includes('UI-P-001'));
+  await click('Export Exceptions');assert.ok(!(await evaluate('window.lastExport.text()')).includes('UI-P-009'));
+  await dropdown('Rows per page','10');assert.equal(await rows(),10);await evaluate('document.querySelector(\'[aria-label="Next page"]\').click()');assert.equal(await rows(),3);await evaluate('document.querySelector(\'[aria-label="Previous page"]\').click()');
+  await evaluate("document.querySelector('.agr-list tbody input').click()");assert.ok(await evaluate("!!document.querySelector('.agr-selection')"));await click('Dispute');await click('Save Review *');await wait("document.querySelector('.agr-notice')?.innerText.includes('review saved')");
+  await click('Purchase Reconciliation (GSTR-2A)');await wait("document.querySelector('.agr-page').getAttribute('aria-busy')==='false' && document.querySelector('.agr-stat:nth-child(3) strong').textContent==='0'");
+  await dropdown('Tax Period','Period: Apr 2026');await wait("document.querySelector('.agr-page').getAttribute('aria-busy')==='false' && document.querySelector('.agr-donut strong').textContent==='0'");
+  assert.ok(await evaluate("document.querySelector('.agr-list tbody').innerText.includes('No purchase records')"));assert.deepEqual(errors,[]);
+  console.log('PASS reference reconciliation UI with actual API data; no module sidebar, 5 widths, status/search/branch/review filters, manual ITC, persisted decisions, CSV import/template/history, matching, exports, bulk review, pagination, statement switch and empty period');
+  await send('Browser.close').catch(()=>{});
+}finally{ws?.close();chrome.kill();await fs.unlink(fixture).catch(()=>{});}
+`;
+const runner = new URL('./gst-recon-reference-run.mjs', import.meta.url);
+try { await fs.writeFile(runner, prefix + checks); await import(runner.href); console.log('PASS '+requests.filter(row=>row.includes('/gst/')).length+' actual reconciliation API requests'); }
+finally { await fs.unlink(runner).catch(() => {}); await new Promise(resolve => server.close(resolve)); await mongoose.connection.dropDatabase(); await mongoose.disconnect(); }

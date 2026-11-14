@@ -15,6 +15,7 @@ import { automobilePurchaseDocuments, emptyAutomobilePurchaseFilters, matchesAut
 import { emptyElectronicsPurchaseFilters, matchesElectronicsPurchase } from './electronicsPurchaseReportFilters.js';
 import { SalesReportGeneralFilters, SalesReportFilters } from './SalesReportFilters.jsx';
 import { hasSelection, matchesSelection, selectionValues } from './salesReportSelections.js';
+import { DynamicPurchaseReportPage, DynamicSalesReportPage } from './DynamicSalesReportPage.jsx';
 import '../../../automobile/automobileProducts.css';
 import '../../../automobile/automobileReports.css';
 
@@ -696,6 +697,16 @@ function escapeReportHtml(value) {
 }
 
 export function ModuleReportsPage({ type }) {
+  const [legacyReport, setLegacyReport] = useState(null);
+  const dynamic = ['sales', 'purchase'].includes(type);
+  if (dynamic && legacyReport !== type) {
+    const Page = type === 'purchase' ? DynamicPurchaseReportPage : DynamicSalesReportPage;
+    return <Page key={type} onIndustryReports={() => setLegacyReport(type)} />;
+  }
+  return <>{dynamic && <button type="button" className="m-4 rounded-md border border-blue-200 bg-white px-4 py-2 text-sm text-blue-700" onClick={() => setLegacyReport(null)}>Back to {type === 'purchase' ? 'Purchase' : 'Sales'} Reports</button>}<LegacyModuleReportsPage type={type} /></>;
+}
+
+function LegacyModuleReportsPage({ type }) {
   const config = MODULE_CONFIG[type] ?? MODULE_CONFIG.sales;
   const [reports, setReports] = useState([]);
   const [branches, setBranches] = useState([]);

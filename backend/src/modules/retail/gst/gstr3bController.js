@@ -1,83 +1,45 @@
 import { Gstr3b } from '../../../models/Gstr3b.js';
 import { postGstr3bAccounting } from '../../../services/gstAccounting.js';
-import { buildGstr3bFromSales, mergeDraftGstr3b, parsePeriod } from '../../../services/gstFromSales.js';
+import { gstr3bAdjustments, loadGstr3bData, recordedGstr3bFiling, validateGstr3bEdits } from '../../../services/gstr3bData.js';
 import { httpError } from '../../../utils/httpError.js';
-import { getActiveGstin } from '../../../utils/gst.js';
 
-// GET /api/gst/gstr3b?period=May+2026
 export async function getGstr3b(req, res, next) {
-  try {
-    const { period } = req.query;
-    if (!period) return next(httpError(400, 'period is required'));
-    if (!parsePeriod(period)) return next(httpError(400, 'period must be "Month YYYY" e.g. "May 2026"'));
-
-    const userId = req.user.id;
-    const gstin = await getActiveGstin(userId);
-    const [record, generated] = await Promise.all([
-      Gstr3b.findOne({ userId, gstin, period }).lean(),
-      buildGstr3bFromSales({ userId, period, gstin }),
-    ]);
-
-    res.json(mergeDraftGstr3b(record, generated));
-  } catch (err) {
-    next(err);
-  }
+  try { res.json((await loadGstr3bData(req, req.query.period)).result); } catch (error) { next(error); }
 }
-
-// PUT /api/gst/gstr3b
 export async function saveGstr3b(req, res, next) {
   try {
-    const { period, ...rest } = req.body;
-    if (!period) return next(httpError(400, 'period is required'));
-
-    const userId = req.user.id;
-    const gstin = await getActiveGstin(userId);
-    const generated = await buildGstr3bFromSales({ userId, period, gstin });
-    const record = await Gstr3b.findOneAndUpdate(
-      { userId, gstin, period },
-      { $set: { ...rest, userId, outwardRows: generated.outwardRows, period, gstin } },
-      { new: true, upsert: true, runValidators: false },
-    ).lean();
-    res.json(record);
-  } catch (err) {
-    next(err);
-  }
+    const body = req.body || {};
+    const allowed = ['period', 'status', 'outwardRows', 'itcAvailable', 'itcReversed', 'lateFeeCgst', 'lateFeeSgst', 'expectedSourceHash'];
+    if (Object.keys(body).some(key => !allowed.includes(key)) || (body.status && body.status !== 'draft')) throw httpError(400, 'Only draft ITC entries and late fees can be saved here.');
+    validateGstr3bEdits(body);
+    const loaded = await loadGstr3bData(req, body.period);
+    if (recordedGstr3bFiling(loaded.saved)) throw httpError(409, 'This filed return snapshot is locked.');
+    if (body.expectedSourceHash && body.expectedSourceHash !== loaded.sourceHash) throw httpError(409, 'Billing data changed. Refresh the return and review your changes again.');
+    const { generated, result, key } = loaded;
+    const rows = (base, edited) => base.map(row => ({ ...row, ...Object.fromEntries(['cgst', 'sgst', 'igst', 'cess'].map(head => [head, Number(edited?.find(item => item.key === row.key)?.[head] ?? row[head]) || 0])) }));
+    const available = rows(generated.itcAvailable, body.itcAvailable || result.itcAvailable);
+    const reversed = rows(generated.itcReversed, body.itcReversed || result.itcReversed);
+    for (const head of ['cgst', 'sgst', 'igst', 'cess']) if (reversed.reduce((sum, row) => sum + row[head], 0) > available.reduce((sum, row) => sum + row[head], 0)) throw httpError(400, `${head.toUpperCase()} reversals exceed available ITC.`);
+    await Gstr3b.findOneAndUpdate(key, { $set: {
+      ...key, status: 'draft', outwardRows: generated.outwardRows, itcAvailable: available,
+      itcReversed: reversed, itcAdjustments: gstr3bAdjustments(available, generated.itcAvailable), itcSourceMode: 'adjustments', sourceHash: loaded.sourceHash,
+      lateFeeCgst: Number(body.lateFeeCgst ?? result.lateFeeCgst) || 0, lateFeeSgst: Number(body.lateFeeSgst ?? result.lateFeeSgst) || 0,
+    } }, { new: true, upsert: true, runValidators: true });
+    res.json((await loadGstr3bData(req, key.period)).result);
+  } catch (error) { next(error); }
 }
-
-// POST /api/gst/gstr3b/file
 export async function fileGstr3b(req, res, next) {
-  try {
-    const { period } = req.body;
-    if (!period) return next(httpError(400, 'period is required'));
-
-    const userId = req.user.id;
-    const gstin = await getActiveGstin(userId);
-    const existing = await Gstr3b.findOne({ userId, gstin, period }).lean();
-    const generated = await buildGstr3bFromSales({ userId, period, gstin });
-    const draft = mergeDraftGstr3b(existing, generated);
-    const arn = `AA${Date.now().toString().slice(-10)}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    const record = await Gstr3b.findOneAndUpdate(
-      { userId, gstin, period },
-      { $set: { ...draft, userId, status: 'filed', arn, filedAt: new Date(), gstin, period } },
-      { new: true, upsert: true, runValidators: false },
-    ).lean();
-    res.json(record);
-  } catch (err) {
-    next(err);
-  }
+  // A local save is not a portal submission. Never manufacture an acknowledgement.
+  next(httpError(503, 'GST portal submission is not connected. Export and review the return, then file it on the GST portal.'));
 }
-
-// POST /api/gst/gstr3b/accounting-adjustment
 export async function postGstr3bAccountingAdjustment(req, res, next) {
   try {
-    const { period } = req.body;
-    if (!period) return next(httpError(400, 'period is required'));
-    if (!parsePeriod(period)) return next(httpError(400, 'period must be "Month YYYY" e.g. "May 2026"'));
-
-    const gstin = await getActiveGstin(req.user.id);
-    const result = await postGstr3bAccounting({ user: req.user, period, gstin });
-    res.status(201).json(result);
-  } catch (err) {
-    next(err);
-  }
+    if (Object.keys(req.body || {}).some(key => !['period', 'expectedSourceHash'].includes(key))) throw httpError(400, 'Choose a return period for accounting posting.');
+    const loaded = await loadGstr3bData(req, req.body?.period);
+    if (!loaded.key.gstin || !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(loaded.key.gstin)) throw httpError(400, 'Configure your business GSTIN before posting GST accounting.');
+    if (req.body.expectedSourceHash && req.body.expectedSourceHash !== loaded.sourceHash) throw httpError(409, 'Billing data changed. Refresh the return before posting.');
+    validateGstr3bEdits(loaded.result);
+    const posted = await postGstr3bAccounting({ user: req.user, period: loaded.key.period, gstin: loaded.key.gstin, invoiceScope: loaded.context.invoiceScope, ownerId: loaded.context.ownerId });
+    res.status(201).json({ ...posted, record: (await loadGstr3bData(req, loaded.key.period)).result });
+  } catch (error) { next(error); }
 }

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { CATEGORIES } from '../src/constants/categories.js';
 import { requireCategoryModule } from '../src/middleware/requireCategoryModule.js';
 
 function checkAccess(category, moduleKey) {
@@ -8,15 +9,17 @@ function checkAccess(category, moduleKey) {
   return result;
 }
 
-test('Automobile has the same sales and purchase API access as Retail', () => {
-  for (const category of ['retail', 'automobile']) assert.equal(checkAccess(category, 'sales'), undefined);
-});
+for (const category of CATEGORIES) {
+  test(`${category} can use the shared consumer billing engine`, () => {
+    assert.equal(checkAccess(category, 'sales'), undefined);
+  });
+}
 
-test('enabling Automobile billing preserves category boundaries', () => {
-  for (const category of ['school', 'hotel', 'finance', 'ngo', 'construction']) {
-    assert.equal(checkAccess(category, 'sales').statusCode, 404);
+test('shared billing preserves specialty module boundaries', () => {
+  for (const category of CATEGORIES) {
+    assert.equal(checkAccess(category, 'hospital')?.statusCode, category === 'hospital' ? undefined : 404);
+    assert.equal(checkAccess(category, 'finance')?.statusCode, category === 'finance' ? undefined : 404);
+    assert.equal(checkAccess(category, 'unknown').statusCode, 404);
   }
-  assert.equal(checkAccess('automobile', 'hospital').statusCode, 404);
-  assert.equal(checkAccess('automobile', 'finance').statusCode, 404);
-  assert.equal(checkAccess('hospital', 'sales'), undefined);
+  for (const category of ['unknown', '', undefined]) assert.equal(checkAccess(category, 'sales').statusCode, 404);
 });

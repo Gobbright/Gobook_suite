@@ -1,7 +1,9 @@
-import { RoomsPage } from './RoomsPage.jsx';
-import { AllocationPage } from './AllocationPage.jsx';
-import { MessPage } from './MessPage.jsx';
-import { HostelFeesPage } from './HostelFeesPage.jsx';
+import { lazyPage } from '../../../../../routes/lazyPage.jsx';
+
+const RoomsPage = lazyPage(() => import('./RoomsPage.jsx'), 'RoomsPage');
+const AllocationPage = lazyPage(() => import('./AllocationPage.jsx'), 'AllocationPage');
+const MessPage = lazyPage(() => import('./MessPage.jsx'), 'MessPage');
+const HostelFeesPage = lazyPage(() => import('./HostelFeesPage.jsx'), 'HostelFeesPage');
 
 export const hostelRoutes = [
   { path: '/school/hostel/rooms', element: <RoomsPage /> },

@@ -10,9 +10,13 @@ const themeOptions = [
   ['boutique', 'Boutique'],
   ['marketplace', 'Marketplace'],
   ['premium', 'Premium'],
+  ['aurora', 'Aurora Luxe'],
+  ['goldenhue', 'GoldenHue Jewelry'],
 ];
 
 const themePresets = {
+  aurora: { label: 'Aurora Luxe', color: '#00e6a0', bg: 'from-emerald-950 to-black', image: 'https://images.unsplash.com/photo-1524805444758-089113d48a6d?auto=format&fit=crop&w=900&q=85', note: 'Emerald glass cards, luminous mint buttons and a dark luxury catalog.' },
+  goldenhue: { label: 'GoldenHue Jewelry', color: '#e6b96e', bg: 'from-yellow-950 to-black', image: 'https://images.unsplash.com/photo-1599643477877-530eb83abc8e?auto=format&fit=crop&w=900&q=85', note: 'Black and champagne gold, editorial jewelry collections and elegant serif headings.' },
   boutique: { label: 'Boutique', color: '#9d174d', bg: 'from-pink-700 to-rose-900', image: 'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=900&q=80', note: 'Polished boutique layout with strong brand presence.' },
   marketplace: { label: 'Marketplace', color: '#ea580c', bg: 'from-orange-600 to-amber-700', image: 'https://images.unsplash.com/photo-1607082350899-7e105aa886ae?auto=format&fit=crop&w=900&q=80', note: 'Dense product discovery for many categories.' },
   premium: { label: 'Premium', color: '#7c3aed', bg: 'from-violet-700 to-slate-950', image: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80', note: 'High-end storefront with refined product focus.' },
@@ -62,6 +66,15 @@ function ThemeMiniPreview({ name, preset, storeName }) {
   const isBoutique = name === 'boutique';
   const isMarketplace = name === 'marketplace';
   const isPremium = name === 'premium';
+
+  if (name === 'aurora' || name === 'goldenhue') {
+    const gold = name === 'goldenhue';
+    return <div className="h-full overflow-hidden p-4" style={{ background: gold ? '#080603' : '#001c14', color: gold ? '#f9f0db' : '#eef6f0' }}>
+      <div className="mb-3 flex items-center justify-between border-b pb-3" style={{ borderColor: `${preset.color}40` }}><span className="text-sm tracking-widest" style={{ color: preset.color, fontFamily: gold ? 'Georgia, serif' : 'Arial, sans-serif' }}>{storeName || preset.label}</span><span className="text-[8px]">HOME · COLLECTION · ♡</span></div>
+      {gold ? <div className="relative mb-3 h-28 overflow-hidden rounded border border-yellow-900"><img src={preset.image} alt="GoldenHue jewelry template" className="h-full w-full object-cover opacity-50" /><div className="absolute inset-0 flex flex-col justify-center bg-gradient-to-r from-black/90 to-transparent p-3"><span className="text-[8px] uppercase tracking-widest" style={{ color: preset.color }}>Crafted to perfection</span><strong className="mt-2 text-xl font-normal" style={{ fontFamily: 'Georgia, serif' }}>Timeless Elegance</strong><span className="mt-2 w-fit rounded-full px-3 py-1 text-[8px] text-black" style={{ background: preset.color }}>Explore collection →</span></div></div> : <p className="mb-3 text-center text-[8px] uppercase tracking-widest">Discover the ultra-luxury collection</p>}
+      <div className="grid grid-cols-3 gap-2">{products.map((product, index) => <div key={product.title} className={`overflow-hidden border p-1.5 ${!gold && index === 0 ? 'col-span-2' : ''}`} style={{ borderColor: gold ? '#594424' : '#5b7b6c', borderRadius: gold ? 5 : 8, background: gold ? '#191108' : 'linear-gradient(140deg,#345748,#142d23)' }}><img src={preset.image} alt="" className="h-16 w-full rounded object-cover" /><p className="mt-2 text-[8px] uppercase">{product.title}</p><p className="text-[9px]" style={{ color: preset.color }}>{product.price}</p><span className="mt-2 block rounded-full py-1 text-center text-[7px] font-bold text-black" style={{ background: preset.color, boxShadow: gold ? 'none' : '0 0 10px #00e6a060' }}>BUY NOW</span></div>)}</div>
+    </div>;
+  }
 
   if (isMarketplace) {
     return (

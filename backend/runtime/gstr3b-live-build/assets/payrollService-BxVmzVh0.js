@@ -1,0 +1,1 @@
+import{a as e,i as t}from"./monthScope-CPwbD7jf.js";var n={payslips:n=>e.get(`/employee/payslips${t(n)}`),adminPayroll:n=>e.get(`/admin/payroll${t(n)}`),remove:t=>e.delete(`/admin/payroll/${t}`),generate:t=>e.post(`/admin/payroll/generate`,{month:t}),approve:t=>e.post(`/admin/payroll/approve`,{month:t}),update:(t,n)=>e.put(`/admin/payroll/${t}`,n)};export{n as t};

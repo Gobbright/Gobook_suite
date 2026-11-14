@@ -1,81 +1,27 @@
-import { Gstr1 } from '../../../models/Gstr1.js';
-import { buildGstr1FromSales, parsePeriod } from '../../../services/gstFromSales.js';
 import { httpError } from '../../../utils/httpError.js';
-import { getActiveGstin } from '../../../utils/gst.js';
+import { exportGstr1Preparation, gstr1Response, loadGstr1Preparation, prepareGstr1, recordGstr1Filing } from '../../../services/gstr1Preparation.js';
 
-// GET /api/gst/gstr1?period=May+2026&filingType=monthly
 export async function getGstr1(req, res, next) {
-  try {
-    const { period, filingType = 'monthly' } = req.query;
-    if (!period) return next(httpError(400, 'period is required'));
-    if (!parsePeriod(period)) return next(httpError(400, 'period must be "Month YYYY" e.g. "May 2026"'));
-
-    const userId = req.user.id;
-    const gstin = await getActiveGstin(userId);
-    const record = await Gstr1.findOne({ userId, gstin, period, filingType }).lean();
-    if (record?.status === 'filed') return res.json(record);
-
-    const generated = await buildGstr1FromSales({ userId, period, filingType, gstin });
-    res.json(record
-      ? { ...generated, ...record, b2b: generated.b2b, b2cs: generated.b2cs, hsn: generated.hsn, source: 'sales+draft' }
-      : generated);
-  } catch (err) {
-    next(err);
-  }
+  try { res.json(gstr1Response(await loadGstr1Preparation(req))); } catch (error) { next(error); }
 }
-
-// PUT /api/gst/gstr1
 export async function saveGstr1(req, res, next) {
   try {
-    const { period, filingType = 'monthly', ...rest } = req.body;
-    if (!period) return next(httpError(400, 'period is required'));
-
-    const userId = req.user.id;
-    const gstin = await getActiveGstin(userId);
-    const record = await Gstr1.findOneAndUpdate(
-      { userId, gstin, period, filingType },
-      { $set: { ...rest, userId, period, filingType, gstin } },
-      { new: true, upsert: true, runValidators: false },
-    ).lean();
-    res.json(record);
-  } catch (err) {
-    next(err);
-  }
+    if (Object.keys(req.body || {}).some(key => !['period', 'filingType', 'expectedSourceHash'].includes(key))) throw httpError(400, 'Return source data and filing status cannot be edited directly. Edit billing records or use the preparation actions.');
+    res.json(await prepareGstr1(req, 'draft'));
+  } catch (error) { next(error); }
 }
-
-// POST /api/gst/gstr1/file
+export async function validateGstr1(req, res, next) {
+  try { res.json(await prepareGstr1(req, 'validate')); } catch (error) { next(error); }
+}
+export async function generateGstr1Summary(req, res, next) {
+  try { res.json(await prepareGstr1(req, 'summary')); } catch (error) { next(error); }
+}
+export async function exportGstr1(req, res, next) {
+  try { res.json(await exportGstr1Preparation(req)); } catch (error) { next(error); }
+}
+// Records the acknowledgement the user received after filing externally.
+// No submission or GST portal verification is claimed without a provider.
 export async function fileGstr1(req, res, next) {
-  try {
-    const { period, filingType = 'monthly' } = req.body;
-    if (!period) return next(httpError(400, 'period is required'));
-
-    const userId = req.user.id;
-    const gstin = await getActiveGstin(userId);
-    const generated = await buildGstr1FromSales({ userId, period, filingType, gstin });
-    const arn = `AA${Date.now().toString().slice(-10)}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    const record = await Gstr1.findOneAndUpdate(
-      { userId, gstin, period, filingType },
-      { $set: { ...generated, userId, status: 'filed', arn, filedAt: new Date(), gstin, period, filingType } },
-      { new: true, upsert: true, runValidators: false },
-    ).lean();
-    res.json(record);
-  } catch (err) {
-    next(err);
-  }
+  try { res.json(await recordGstr1Filing(req)); } catch (error) { next(error); }
 }
-
-// GET /api/gst/gstr1/auto-populate?period=May+2026&filingType=monthly
-export async function autoPopulateGstr1(req, res, next) {
-  try {
-    const { period, filingType = 'monthly' } = req.query;
-    if (!period) return next(httpError(400, 'period is required'));
-    if (!parsePeriod(period)) return next(httpError(400, 'period must be "Month YYYY" e.g. "May 2026"'));
-
-    const userId = req.user.id;
-    const gstin = await getActiveGstin(userId);
-    const generated = await buildGstr1FromSales({ userId, period, filingType, gstin });
-    res.json(generated);
-  } catch (err) {
-    next(err);
-  }
-}
+export const autoPopulateGstr1 = getGstr1;

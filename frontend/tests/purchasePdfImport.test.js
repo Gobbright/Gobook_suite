@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analysePurchasePages, normalizePurchaseAnalysis, matchPurchaseImport, parsePurchasePdfPages, pdfDate, pdfNumber, pdfTextLines } from '../src/utils/purchasePdfImport.js';
+import { analysePurchasePages, normalizePurchaseAnalysis, matchPurchaseImport, parsePurchasePdfPages, pdfDate, pdfNumber, pdfTextLines, pdfQuantity, reconcilePurchaseQuantities, purchasePageNeedsVision } from '../src/utils/purchasePdfImport.js';
 import { purchaseImportIssues } from '../src/utils/purchasePdfValidation.js';
 
 const line = (values) => ({ cells: values.map(([text, x]) => ({ text, x, width: text.length * 5 })) });
@@ -9,6 +9,74 @@ const item = (description, qty = '2', rate = '100', gst = '5%') => line([[descri
 const page = () => [line([['Supplier: Lakshmi Textiles', 40]]), line([['GSTIN: 33ABCDE1234F1Z5', 40]]), line([['Invoice No: SUP-101', 40]]), line([['Invoice Date: 04/11/2026', 40]]), header(), item('Cotton Saree'), line([['Grand Total: 189.00', 40]])];
 
 const aiBill = (overrides = {}) => ({ vendor: { name: 'Supplier' }, invoiceNo: 'AI-1', date: '2026-11-04', items: [{ description: 'Plain Product', productCode: '00123', qty: 2, rate: 100, gstRate: 5, sourceAmount: 200 }], charges: [], warnings: [], ...overrides });
+
+test('scan detection uses displayed image area instead of logo bitmap resolution', () => {
+  const ops = { save: 1, restore: 2, transform: 3, paintImageXObject: 4, paintInlineImageXObject: 5, paintImageXObjectRepeat: 6 };
+  const operators = { fnArray: [1, 3, 4, 2], argsArray: [[], [80, 0, 0, 40, 40, 740], ['logo', 2400, 1200], []] };
+  assert.equal(purchasePageNeedsVision(operators, ops, 600, 840), false);
+  operators.argsArray[1] = [520, 0, 0, 400, 40, 200];
+  assert.equal(purchasePageNeedsVision(operators, ops, 600, 840), true);
+  const repeated = { fnArray: [6], argsArray: [['scan', 520, 400, [40, 200]]] };
+  assert.equal(purchasePageNeedsVision(repeated, ops, 600, 840), true);
+  repeated.argsArray[0] = ['logo', 80, 40, [40, 740]];
+  assert.equal(purchasePageNeedsVision(repeated, ops, 600, 840), false);
+});
+
+test('a readable unsupported table reports the parser failure when automatic analysis is disabled', async () => {
+  await assert.rejects(analysePurchasePages([[line([['Supplier: Sample invoice without a recognized table', 40]])]], {
+    service: { purchasePdfCapabilities: async () => ({ enabled: false }) }, needsVision: [false],
+  }), /No item table could be recognized/);
+});
+
+test('explicit quantity-unit cells normalize without interpreting packs or dimensions as quantities', () => {
+  assert.deepEqual(pdfQuantity('12 Nos'), { qty: 12, unit: 'Nos' });
+  assert.deepEqual(pdfQuantity('2.5 kg'), { qty: 2.5, unit: 'kg' });
+  assert.deepEqual(pdfQuantity('1,200pcs'), { qty: 1200, unit: 'pcs' });
+  for (const value of ['2 x 12', '12 + 2', '6/12', '12 GB', 'unreadable', null]) assert.equal(pdfQuantity(value).qty, '');
+  const normalized = normalizePurchaseAnalysis(aiBill({ items: [{ description: 'Product', quantity: '12 Nos', rate: 100, gstRate: 5 }] }));
+  assert.equal(normalized.items[0].qty, 12); assert.equal(normalized.items[0].unit, 'Nos');
+});
+
+test('right-aligned Qty stays out of the next Unit column and does not take Free Qty', () => {
+  const result = parsePurchasePdfPages([[header(), line([['Product', 40], ['5208', 180], ['12', 269], ['Nos', 280], ['100', 340], ['0', 400], ['5%', 460], ['1200', 520]])]]);
+  assert.equal(result.items[0].qty, 12); assert.equal(result.items[0].unit, 'Nos');
+  const free = parsePurchasePdfPages([[line([['Description', 40], ['Qty', 220], ['Free Qty', 280], ['Unit', 320], ['Rate', 370], ['GST %', 460], ['Amount', 520]]), line([['Product', 40], ['2', 220], ['5', 280], ['Nos', 320], ['100', 370], ['0%', 460], ['200', 520]])]]);
+  assert.equal(free.items[0].qty, 2);
+});
+
+test('inline decimal quantity units are retained from the actual item table', () => {
+  const result = parsePurchasePdfPages([[line([['Description', 40], ['Qty', 240], ['Rate', 340], ['GST %', 460], ['Amount', 520]]), line([['Measured product', 40], ['2.5 kg', 240], ['100', 340], ['0%', 460], ['250', 520]])]]);
+  assert.equal(result.items[0].qty, 2.5); assert.equal(result.items[0].unit, 'kg');
+});
+
+test('missing visual quantity recovers only from a unique matching printed row with reconciled amounts', async () => {
+  const service = { purchasePdfCapabilities: async () => ({ enabled: true }), analysePurchasePdf: async () => ({ data: aiBill({ invoiceAmount: 189, items: [{ description: 'Cotton Saree', qty: null, rate: 100, discount: 10, discountType: 'percent', gstRate: 5, sourceAmount: 180, sourcePage: 1, uncertainFields: ['qty'] }] }) }) };
+  const result = await analysePurchasePages([page()], { service, renderPage: async () => 'image' });
+  assert.equal(result.items[0].qty, 2); assert.equal(result.items[0].quantitySource, 'pdf-text-checked');
+  assert.deepEqual(result.items[0].uncertainFields, []); assert.deepEqual(purchaseImportIssues(result), []);
+});
+
+test('ambiguous rows, different variants and different rates never borrow another product quantity', () => {
+  const local = parsePurchasePdfPages([page()]);
+  const missing = normalizePurchaseAnalysis(aiBill({ items: [{ description: 'Cotton Saree', qty: null, rate: 100, discount: 10, gstRate: 5, sourceAmount: 180 }] }));
+  assert.equal(reconcilePurchaseQuantities({ ...local, items: [local.items[0], local.items[0]] }, missing).items[0].qty, '');
+  const differentRate = structuredClone(missing); differentRate.items[0].rate = 200;
+  assert.equal(reconcilePurchaseQuantities(local, differentRate).items[0].qty, '');
+  const differentVariant = structuredClone(missing); differentVariant.items[0].size = 'XL';
+  assert.equal(reconcilePurchaseQuantities(local, differentVariant).items[0].qty, '');
+  const unknownAmount = structuredClone(local); unknownAmount.items[0].sourceAmount = '';
+  assert.equal(reconcilePurchaseQuantities(unknownAmount, missing).items[0].qty, '');
+});
+
+test('conflicting quantities and missing critical columns are blocking review issues', () => {
+  const local = parsePurchasePdfPages([page()]);
+  const conflict = normalizePurchaseAnalysis(aiBill({ items: [{ description: 'Cotton Saree', qty: 3, rate: 100, discount: 10, gstRate: 5, sourceAmount: 180 }] }));
+  const result = reconcilePurchaseQuantities(local, conflict);
+  assert.equal(result.items[0].qty, '');
+  assert.ok(purchaseImportIssues(result).some(issue => issue.fields.includes('qty')));
+  const missing = normalizePurchaseAnalysis(aiBill({ items: [{ description: 'Product', qty: null, rate: 100, gstRate: 5 }] }));
+  assert.ok(purchaseImportIssues(missing).some(issue => /quantity.*missing/.test(issue.message)));
+});
 
 test('layout-independent checks reject shifted amounts, metadata products and mismatched invoice totals', () => {
   const valid = normalizePurchaseAnalysis(aiBill({ invoiceAmount: 210 }));
@@ -92,12 +160,47 @@ test('missing AI setup and partial scanned failures never silently apply only te
   const disabled = { purchasePdfCapabilities: async () => ({ enabled: false }) };
   const local = await analysePurchasePages([page()], { service: disabled });
   assert.equal(local.items.length, 1);
-  await assert.rejects(analysePurchasePages([[]], { service: disabled }), /GROQ_API_KEY/);
-  await assert.rejects(analysePurchasePages([page(), []], { service: disabled, needsVision: [false, true] }), /GROQ_API_KEY/);
+  await assert.rejects(analysePurchasePages([[]], { service: disabled }), /not enabled/);
+  await assert.rejects(analysePurchasePages([page(), []], { service: disabled, needsVision: [false, true] }), /not enabled/);
   const failure = { purchasePdfCapabilities: async () => ({ enabled: true }), analysePurchasePdf: async () => { throw new Error('service unavailable'); } };
   const retained = await analysePurchasePages([page()], { service: failure });
   assert.equal(retained.items.length, 1); assert.ok(retained.warnings.some((warning) => /service unavailable/.test(warning)));
   await assert.rejects(analysePurchasePages([page(), []], { service: failure, renderPage: async () => 'image', needsVision: [false, true] }), /service unavailable/);
+});
+
+test('one merged product with separate Size and Colour columns imports every variant without AI', async () => {
+  const at = (y, cells) => ({ ...line(cells), y: -y });
+  const rows = [
+    at(0, [['Description', 40], ['Size', 200], ['Colour', 260], ['Qty', 340], ['Rate', 400], ['GST %', 460], ['Amount', 520]]),
+    at(30, [['M', 200], ['Black', 260], ['2', 340], ['100', 400], ['5%', 460], ['200', 520]]),
+    at(50, [['Shirt', 40], ['L', 200], ['White', 260], ['3', 340], ['100', 400], ['5%', 460], ['300', 520]]),
+    at(70, [['XL', 200], ['Blue', 260], ['4', 340], ['100', 400], ['5%', 460], ['400', 520]]),
+  ];
+  const result = await analysePurchasePages([rows], { service: { purchasePdfCapabilities: async () => ({ enabled: false }) } });
+  assert.equal(result.items.length, 3);
+  assert.deepEqual(result.items.map(row => row.description), ['Shirt', 'Shirt', 'Shirt']);
+  assert.deepEqual(result.items.map(row => row.size), ['M', 'L', 'XL']);
+  assert.deepEqual(result.items.map(row => row.qty), [2, 3, 4]);
+  assert.ok(result.items.every(row => row.productType === 'Matrix'));
+});
+
+test('separate RAM and Storage columns retain each electronics variant under the merged product', () => {
+  const result = parsePurchasePdfPages([[
+    line([['Description', 40], ['RAM', 200], ['Storage', 260], ['Qty', 340], ['Rate', 400], ['GST %', 460], ['Amount', 520]]),
+    line([['Laptop', 40], ['8 GB', 200], ['256 GB', 260], ['2', 340], ['1000', 400], ['18%', 460], ['2000', 520]]),
+    line([['16 GB', 200], ['512 GB', 260], ['3', 340], ['1200', 400], ['18%', 460], ['3600', 520]]),
+  ]]);
+  assert.equal(result.items.length, 2);
+  assert.deepEqual(result.items.map(row => [row.description, row.ram, row.storage, row.qty]), [['Laptop', '8 GB', '256 GB', 2], ['Laptop', '16 GB', '512 GB', 3]]);
+});
+
+test('capability outages are not reported as missing provider keys, and unmatched rows cannot disappear', async () => {
+  await assert.rejects(analysePurchasePages([[]], { service: { purchasePdfCapabilities: async () => { throw new Error('Network error'); } } }), error => /temporarily unavailable/.test(error.message) && !/GROQ_API_KEY/.test(error.message));
+  assert.throws(() => parsePurchasePdfPages([[
+    line([['Description', 40], ['Qty', 240], ['Rate', 340], ['GST %', 460]]),
+    line([['Product', 40], ['2', 240], ['100', 340], ['5%', 460]]),
+    line([['3', 240], ['100', 340], ['5%', 460]]),
+  ]]), /preserve all variants/);
 });
 
 test('catalog matching uses colour-only variants and blocks contradictory identities or attributes', () => {

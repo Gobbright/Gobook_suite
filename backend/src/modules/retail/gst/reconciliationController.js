@@ -1,7 +1,4 @@
-import { GstReconciliation } from '../../../models/GstReconciliation.js';
-import { buildPurchaseReconciliationFromSales, parsePeriod } from '../../../services/gstFromSales.js';
-import { httpError } from '../../../utils/httpError.js';
-import { getActiveGstin } from '../../../utils/gst.js';
+import { loadWorkspace, mutateWorkspace } from '../../../services/reconciliationWorkspace.js';
 
 function mergeEntries(generatedEntries, savedEntries = []) {
   const savedByInvoice = new Map(savedEntries.map((entry) => [`${String(entry.gstin || '').trim().toUpperCase()}|${String(entry.invoiceNo || '').trim().toLowerCase()}`, entry]));
@@ -25,78 +22,13 @@ function mergeEntries(generatedEntries, savedEntries = []) {
   });
 }
 
-// GET /api/gst/reconciliation?period=May+2026&type=2b
+
 export async function getReconciliation(req, res, next) {
-  try {
-    const { period, type = '2b' } = req.query;
-    if (!period) return next(httpError(400, 'period is required'));
-    if (!parsePeriod(period)) return next(httpError(400, 'period must be "Month YYYY" e.g. "May 2026"'));
-
-    const userId = req.user.id;
-    const gstin = await getActiveGstin(userId);
-    const [record, generated] = await Promise.all([
-      GstReconciliation.findOne({ userId, gstin, period, type }),
-      buildPurchaseReconciliationFromSales({ userId, period, gstin, type }),
-    ]);
-
-    if (!record) {
-      const created = await GstReconciliation.create({ userId, gstin, period, type, entries: generated.entries });
-      return res.json({ ...created.toObject(), entries: mergeEntries(generated.entries, created.entries), source: 'sales' });
-    }
-
-    record.entries = mergeEntries(generated.entries, record.entries);
-    await record.save();
-    res.json({ ...record.toObject(), entries: mergeEntries(generated.entries, record.entries), source: 'sales+saved' });
-  } catch (err) {
-    next(err);
-  }
+  try { res.json((await loadWorkspace(req, req.query)).result); } catch (error) { next(error); }
 }
-
-// PUT /api/gst/reconciliation
 export async function saveReconciliation(req, res, next) {
-  try {
-    const { period, type = '2b', entries } = req.body;
-    if (!period) return next(httpError(400, 'period is required'));
-
-    const userId = req.user.id;
-    const gstin = await getActiveGstin(userId);
-    const generated = await buildPurchaseReconciliationFromSales({ userId, period, gstin, type });
-    const record = await GstReconciliation.findOneAndUpdate(
-      { userId, gstin, period, type },
-      { $set: { userId, entries: mergeEntries(generated.entries, entries ?? []), gstin, period, type } },
-      { new: true, upsert: true, runValidators: false },
-    ).lean();
-    res.json({ ...record, entries: mergeEntries(generated.entries, record.entries) });
-  } catch (err) {
-    next(err);
-  }
+  try { res.json(await mutateWorkspace(req)); } catch (error) { next(error); }
 }
-
-// PATCH /api/gst/reconciliation/entry/:entryId
 export async function updateEntry(req, res, next) {
-  try {
-    const { entryId } = req.params;
-    const { period, type = '2b', resolution } = req.body;
-    if (!period) return next(httpError(400, 'period is required'));
-    if (!['accepted', 'disputed', 'none'].includes(resolution)) {
-      return next(httpError(400, 'resolution must be accepted, disputed, or none'));
-    }
-
-    const userId = req.user.id;
-    const gstin = await getActiveGstin(userId);
-    let record = await GstReconciliation.findOne({ userId, gstin, period, type });
-    if (!record) {
-      const generated = await buildPurchaseReconciliationFromSales({ userId, period, gstin, type });
-      record = await GstReconciliation.create({ userId, gstin, period, type, entries: generated.entries });
-    }
-
-    const entry = record.entries.id(entryId);
-    if (!entry) return next(httpError(404, 'Entry not found'));
-
-    entry.resolution = resolution;
-    await record.save();
-    res.json(record.toObject());
-  } catch (err) {
-    next(err);
-  }
+  try { res.json(await mutateWorkspace({ ...req, body: { ...req.body, action: 'resolve', rowIds: [req.params.entryId] } })); } catch (error) { next(error); }
 }

@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-BWRPWl8p.js";import{t}from"./BookReport-DheyudjP.js";var n=e();function r(){return(0,n.jsx)(t,{})}export{r as CashBookPage};

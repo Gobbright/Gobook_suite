@@ -1,4 +1,6 @@
-import { DashboardPage } from '../../../../../pages/DashboardPage.jsx';
+import { lazyPage } from '../../../../../routes/lazyPage.jsx';
+
+const DashboardPage = lazyPage(() => import('../../../../../pages/DashboardPage.jsx'), 'DashboardPage');
 
 const dashboard = <DashboardPage />;
 

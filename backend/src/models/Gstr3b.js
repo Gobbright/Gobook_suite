@@ -21,12 +21,15 @@ const itcRowSchema = new Schema({
 
 const gstr3bSchema = new Schema({
   userId:        { type: Schema.Types.ObjectId, ref: 'AppUser', required: true, index: true },
-  gstin:        { type: String, default: '27ZZZZZ9999A1Z5' },
+  gstin:        { type: String, default: '' },
   period:       { type: String, required: true },
   status:       { type: String, enum: ['draft', 'filed'], default: 'draft' },
   outwardRows:  { type: [taxRowSchema], default: [] },
   itcAvailable: { type: [itcRowSchema], default: [] },
   itcReversed:  { type: [itcRowSchema], default: [] },
+  itcAdjustments: { type: [itcRowSchema], default: undefined },
+  itcSourceMode: { type: String, enum: ['adjustments'] },
+  sourceHash: { type: String },
   lateFeeCgst:  { type: Number, default: 0 },
   lateFeeSgst:  { type: Number, default: 0 },
   accountingVoucherId: { type: Schema.Types.ObjectId, ref: 'AccountingVoucher' },
@@ -34,6 +37,7 @@ const gstr3bSchema = new Schema({
   accountingPostedAt:  { type: Date },
   arn:          { type: String },
   filedAt:      { type: Date },
+  filing: { source: { type: String, enum: ['manual', 'provider'] } },
 }, { timestamps: true });
 
 gstr3bSchema.index({ userId: 1, gstin: 1, period: 1 }, { unique: true });

@@ -1,0 +1,1 @@
+import{t as e}from"./CategoriesPage-C1XBcVwV.js";export{e as CategoriesPage};

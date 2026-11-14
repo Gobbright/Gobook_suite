@@ -1,8 +1,10 @@
-import { MedicalBillsPage } from './MedicalBillsPage.jsx';
-import { InsuranceClaimsPage } from './InsuranceClaimsPage.jsx';
-import { PaymentsPage } from './PaymentsPage.jsx';
-import { ReceivablesPage } from './ReceivablesPage.jsx';
-import { RevenueReportsPage } from './RevenueReportsPage.jsx';
+import { lazyPage } from '../../../../../routes/lazyPage.jsx';
+
+const MedicalBillsPage = lazyPage(() => import('./MedicalBillsPage.jsx'), 'MedicalBillsPage');
+const InsuranceClaimsPage = lazyPage(() => import('./InsuranceClaimsPage.jsx'), 'InsuranceClaimsPage');
+const PaymentsPage = lazyPage(() => import('./PaymentsPage.jsx'), 'PaymentsPage');
+const ReceivablesPage = lazyPage(() => import('./ReceivablesPage.jsx'), 'ReceivablesPage');
+const RevenueReportsPage = lazyPage(() => import('./RevenueReportsPage.jsx'), 'RevenueReportsPage');
 
 export const medicalBillingRoutes = [
   { path: '/hospital/medical-bills', element: <MedicalBillsPage /> },

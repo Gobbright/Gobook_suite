@@ -1,11 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { filterReconciliation, importReconciliationCsv, matchReconciliation, parseReconciliationCsv, reconciliationSummary } from '../src/features/categories/automobile/automobileGstReconciliation.js';
+import { filterReconciliation, importReconciliationCsv, matchReconciliation, parseReconciliationCsv, reconciliationSummary, parseWorkspaceImport, filterWorkspace } from '../src/features/categories/automobile/automobileGstReconciliation.js';
 
 const entries = [
   { invoiceNo: 'P1', gstin: 'GST-A', supplier: 'Parts One', branch: 'Main', itcBooks: 100, itcGstr2b: 0, resolution: 'none' },
   { invoiceNo: 'P1', gstin: 'GST-B', supplier: 'Parts Two', branch: 'North', itcBooks: 200, itcGstr2b: 0, resolution: 'none' },
 ];
+test('workspace import retains statement-only rows, duplicates, explicit zero and unknown fields', () => {
+  const rows = parseWorkspaceImport('invoiceNo,gstin,date,taxable,gst\nP1,GST-A,2026-11-03,1000,180\nP9,GST-B,,,0\nP9,GST-B,,,0');
+  assert.equal(rows.length, 3); assert.equal(rows[1].gst, 0); assert.equal(rows[1].taxable, null);
+  assert.equal(rows[1].statementEligibility, 'unknown');
+  assert.throws(() => parseWorkspaceImport('invoiceNo,gstin,gst\nP1,GST-A,invalid'), /invalid numeric/);
+});
+test('workspace normalized JSON imports and filters cover review and eligibility separately', () => {
+  assert.equal(parseWorkspaceImport('[{"invoiceNo":"P1","gstin":"GST-A","gst":180}]', 'statement.json')[0].gst, 180);
+  assert.throws(() => parseWorkspaceImport('{"data":{"docdata":{}}}', 'raw.json'), /Raw portal JSON/);
+  const rows = [{ id: 'b:1', book: { invoiceNo: 'P1', supplier: 'Parts One', gstin: 'GST-A' }, portal: null, status: 'not_in_2b', eligibility: 'review', resolution: 'none', gstDifference: 180, taxableDifference: 1000, duplicate: true }];
+  assert.equal(filterWorkspace(rows, { search: 'Parts', status: 'not_in_2b', eligibility: 'review', difference: '900', duplicates: true }).length, 1);
+  assert.equal(filterWorkspace(rows, { resolution: 'accepted' }).length, 0);
+});
 test('CSV import matches supplier GSTIN and invoice together', () => {
   const result = importReconciliationCsv(entries, 'invoiceNo,gstin,itcGstr2b\nP1,GST-B,200', 'October 2026');
   assert.equal(result.imported, 1);

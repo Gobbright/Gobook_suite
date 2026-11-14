@@ -1,16 +1,16 @@
+import { lazyPage } from '../../../routes/lazyPage.jsx';
 import { Navigate } from 'react-router-dom';
 
-import { FinanceAutoBillPage, FinanceManualBillPage } from './FinanceBillsPage.jsx';
-import { FinanceCollectionPage } from './FinanceCollectionPage.jsx';
-import {
-  FinanceAddCustomerPage,
-  FinanceAllCustomersPage,
-  FinanceClosedCustomersPage,
-} from './FinanceCustomersPage.jsx';
-import { FinanceDashboardPage } from './FinanceDashboardPage.jsx';
-import { FinanceProfileSettingsPage } from './FinanceProfileSettingsPage.jsx';
-import { FinanceRemindersPage } from './FinanceRemindersPage.jsx';
-import { FinanceReportsPage } from './FinanceReportsPage.jsx';
+const FinanceAutoBillPage = lazyPage(() => import('./FinanceBillsPage.jsx'), 'FinanceAutoBillPage');
+const FinanceManualBillPage = lazyPage(() => import('./FinanceBillsPage.jsx'), 'FinanceManualBillPage');
+const FinanceCollectionPage = lazyPage(() => import('./FinanceCollectionPage.jsx'), 'FinanceCollectionPage');
+const FinanceAddCustomerPage = lazyPage(() => import('./FinanceCustomersPage.jsx'), 'FinanceAddCustomerPage');
+const FinanceAllCustomersPage = lazyPage(() => import('./FinanceCustomersPage.jsx'), 'FinanceAllCustomersPage');
+const FinanceClosedCustomersPage = lazyPage(() => import('./FinanceCustomersPage.jsx'), 'FinanceClosedCustomersPage');
+const FinanceDashboardPage = lazyPage(() => import('./FinanceDashboardPage.jsx'), 'FinanceDashboardPage');
+const FinanceProfileSettingsPage = lazyPage(() => import('./FinanceProfileSettingsPage.jsx'), 'FinanceProfileSettingsPage');
+const FinanceRemindersPage = lazyPage(() => import('./FinanceRemindersPage.jsx'), 'FinanceRemindersPage');
+const FinanceReportsPage = lazyPage(() => import('./FinanceReportsPage.jsx'), 'FinanceReportsPage');
 
 export const financeRoutes = [
   { path: '/finance/dashboard', element: <FinanceDashboardPage /> },
